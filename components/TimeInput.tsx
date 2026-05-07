@@ -31,10 +31,12 @@ export function TimeInput({
   value,
   onChange,
   autoFocus = false,
+  disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   autoFocus?: boolean;
+  disabled?: boolean;
 }) {
   const [m, setM] = useState(() => splitSeconds(value).m);
   const [s, setS] = useState(() => splitSeconds(value).s);
@@ -70,6 +72,7 @@ export function TimeInput({
           className="input text-lg"
           value={m}
           autoFocus={autoFocus}
+          disabled={disabled}
           onChange={(e) => push(e.target.value, s)}
         />
         <div className="mt-0.5 text-xs text-slate-500">minutes</div>
@@ -83,6 +86,7 @@ export function TimeInput({
           placeholder="sec"
           className="input text-lg"
           value={s}
+          disabled={disabled}
           onChange={(e) => push(m, e.target.value)}
         />
         <div className="mt-0.5 text-xs text-slate-500">seconds</div>

@@ -140,26 +140,48 @@ export default function EventDashboard({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      <section className="card">
-        <h2 className="text-lg font-semibold">Score logging</h2>
-        <p className="text-sm text-slate-600">Tap an activity to log scores.</p>
-        <ul className="mt-3 space-y-2">
-          {data.activities.map((a) => (
-            <li key={a.id}>
-              <Link
-                href={`/admin/events/${data.id}/activities/${a.id}/log`}
-                className="card flex items-center justify-between hover:border-brand"
-              >
-                <span className="font-medium">{a.name}</span>
-                <span className="text-sm text-slate-500">Log →</span>
-              </Link>
-            </li>
-          ))}
-          {data.activities.length === 0 && (
-            <p className="text-sm text-slate-500">No activities yet — add some on the Activities page.</p>
-          )}
-        </ul>
-      </section>
+      {data.activities.length === 0 ? (
+        <section className="card border-2 border-dashed border-amber-400 bg-amber-50">
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="badge badge-amber">Setup needed</span>
+                <h2 className="text-lg font-semibold text-amber-900">
+                  This event has no activities yet
+                </h2>
+              </div>
+              <p className="mt-1 text-sm text-amber-800">
+                Hosts can&apos;t log any scores until you add at least one activity. Pick from the
+                template library to get started.
+              </p>
+            </div>
+            <Link
+              href={`/admin/events/${data.id}/activities`}
+              className="btn btn-primary whitespace-nowrap"
+            >
+              + Add activities
+            </Link>
+          </div>
+        </section>
+      ) : (
+        <section className="card">
+          <h2 className="text-lg font-semibold">Score logging</h2>
+          <p className="text-sm text-slate-600">Tap an activity to log scores.</p>
+          <ul className="mt-3 space-y-2">
+            {data.activities.map((a) => (
+              <li key={a.id}>
+                <Link
+                  href={`/admin/events/${data.id}/activities/${a.id}/log`}
+                  className="card flex items-center justify-between hover:border-brand"
+                >
+                  <span className="font-medium">{a.name}</span>
+                  <span className="text-sm text-slate-500">Log →</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">Event lifecycle</h2>
