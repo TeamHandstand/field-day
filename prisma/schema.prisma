@@ -63,13 +63,13 @@ model Team {
 }
 
 model TeamPhoto {
-  id                 String   @id @default(cuid())
-  teamId             String
-  team               Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  cloudinaryUrl      String
-  cloudinaryPublicId String
-  displayOrder       Int      @default(0)
-  uploadedAt         DateTime @default(now())
+  id            String   @id @default(cuid())
+  teamId        String
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  s3Url         String
+  s3Key         String
+  displayOrder  Int      @default(0)
+  uploadedAt    DateTime @default(now())
 
   @@index([teamId])
 }

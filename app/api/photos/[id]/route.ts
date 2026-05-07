@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, notFound } from "@/lib/api";
-import { destroyAsset, isCloudinaryConfigured } from "@/lib/cloudinary";
+import { deleteObject, isS3Configured } from "@/lib/s3";
 import { publishEvent } from "@/lib/pubnub-server";
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
@@ -12,8 +12,8 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     include: { team: true },
   });
   if (!photo) return notFound();
-  if (isCloudinaryConfigured()) {
-    await destroyAsset(photo.cloudinaryPublicId);
+  if (isS3Configured()) {
+    await deleteObject(photo.s3Key);
   }
   await prisma.teamPhoto.delete({ where: { id: params.id } });
   await publishEvent({

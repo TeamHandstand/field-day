@@ -21,7 +21,7 @@ type Team = {
   name: string;
   teamNumber: number;
   cohortNumber: number | null;
-  photos: { cloudinaryUrl: string }[];
+  photos: { s3Url: string }[];
 };
 
 type ScoreEntry = {
@@ -49,7 +49,7 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
       name: t.name,
       teamNumber: t.teamNumber,
       cohortNumber: t.cohortNumber,
-      photos: t.photoUrl ? [{ cloudinaryUrl: t.photoUrl }] : [],
+      photos: t.photoUrl ? [{ s3Url: t.photoUrl }] : [],
     })));
     const grouped: Record<string, ScoreEntry[]> = {};
     for (const s of ev.scores as { teamId: string; subActivityId: string; computedValue: number; activityId: string }[]) {
@@ -119,7 +119,7 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
                   <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-xs font-bold text-slate-600">
                     {t.photos[0] ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={t.photos[0].cloudinaryUrl} alt="" className="h-full w-full object-cover" />
+                      <img src={t.photos[0].s3Url} alt="" className="h-full w-full object-cover" />
                     ) : (
                       `#${t.teamNumber}`
                     )}

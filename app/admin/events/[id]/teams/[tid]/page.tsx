@@ -7,7 +7,7 @@ type Team = {
   name: string;
   teamNumber: number;
   cohortNumber: number | null;
-  photos: { id: string; cloudinaryUrl: string; cloudinaryPublicId: string; displayOrder: number }[];
+  photos: { id: string; s3Url: string; s3Key: string; displayOrder: number }[];
   rosterUsers: { id: string; name: string }[];
 };
 
@@ -68,31 +68,35 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
   const uploadPhoto = async (file: File) => {
     setUploading(true);
     try {
-      const signRes = await fetch(`/api/teams/${params.tid}/photos/sign`, { method: "POST" });
+      const contentType = file.type || "image/jpeg";
+      const signRes = await fetch(`/api/teams/${params.tid}/photos/sign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contentType }),
+      });
       if (!signRes.ok) {
-        alert("Cloudinary not configured. Set CLOUDINARY_* env vars.");
+        alert("S3 not configured or unsupported file type. Check AWS_* env vars.");
         return;
       }
-      const sign = await signRes.json();
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("api_key", sign.apiKey);
-      fd.append("timestamp", String(sign.timestamp));
-      fd.append("signature", sign.signature);
-      fd.append("folder", sign.folder);
-      const upRes = await fetch(`https://api.cloudinary.com/v1_1/${sign.cloudName}/image/upload`, {
-        method: "POST",
-        body: fd,
+      const sign = (await signRes.json()) as {
+        uploadUrl: string;
+        key: string;
+        publicUrl: string;
+        contentType: string;
+      };
+      const upRes = await fetch(sign.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": sign.contentType },
+        body: file,
       });
       if (!upRes.ok) {
-        alert("Cloudinary upload failed");
+        alert("S3 upload failed");
         return;
       }
-      const up = await upRes.json();
       await fetch(`/api/teams/${params.tid}/photos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cloudinaryUrl: up.secure_url, cloudinaryPublicId: up.public_id }),
+        body: JSON.stringify({ s3Url: sign.publicUrl, s3Key: sign.key }),
       });
       load();
     } finally {
@@ -184,7 +188,7 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
           {team.photos.map((p, i) => (
             <li key={p.id} className="rounded-md border border-slate-200 p-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={p.cloudinaryUrl} alt="" className="aspect-square w-full rounded object-cover" />
+              <img src={p.s3Url} alt="" className="aspect-square w-full rounded object-cover" />
               <div className="mt-2 flex items-center justify-between text-xs">
                 <span className="text-slate-500">{i === 0 ? "Primary" : `#${i + 1}`}</span>
                 <div className="flex gap-1">

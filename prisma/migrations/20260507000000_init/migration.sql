@@ -48,8 +48,8 @@ CREATE TABLE "Team" (
 CREATE TABLE "TeamPhoto" (
     "id" TEXT NOT NULL,
     "teamId" TEXT NOT NULL,
-    "cloudinaryUrl" TEXT NOT NULL,
-    "cloudinaryPublicId" TEXT NOT NULL,
+    "s3Url" TEXT NOT NULL,
+    "s3Key" TEXT NOT NULL,
     "displayOrder" INTEGER NOT NULL DEFAULT 0,
     "uploadedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

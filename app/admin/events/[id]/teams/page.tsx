@@ -7,7 +7,7 @@ type Team = {
   name: string;
   teamNumber: number;
   cohortNumber: number | null;
-  photos: { id: string; cloudinaryUrl: string }[];
+  photos: { id: string; s3Url: string }[];
   rosterUsers: { id: string; name: string }[];
 };
 
@@ -128,7 +128,7 @@ export default function TeamsPage({ params }: { params: { id: string } }) {
               <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-sm font-bold text-slate-600">
                 {t.photos[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={t.photos[0].cloudinaryUrl} alt="" className="h-full w-full object-cover" />
+                  <img src={t.photos[0].s3Url} alt="" className="h-full w-full object-cover" />
                 ) : (
                   `#${t.teamNumber}`
                 )}

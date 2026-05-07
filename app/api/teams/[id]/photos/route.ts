@@ -13,8 +13,8 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 const createSchema = z.object({
-  cloudinaryUrl: z.string().url(),
-  cloudinaryPublicId: z.string().min(1),
+  s3Url: z.string().url(),
+  s3Key: z.string().min(1),
 });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -32,8 +32,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   const photo = await prisma.teamPhoto.create({
     data: {
       teamId: params.id,
-      cloudinaryUrl: parsed.data.cloudinaryUrl,
-      cloudinaryPublicId: parsed.data.cloudinaryPublicId,
+      s3Url: parsed.data.s3Url,
+      s3Key: parsed.data.s3Key,
       displayOrder: (last?.displayOrder ?? -1) + 1,
     },
   });

@@ -86,7 +86,7 @@ export async function loadLeaderboard(eventId: string): Promise<LeaderboardData 
     name: t.name,
     teamNumber: t.teamNumber,
     cohortNumber: t.cohortNumber,
-    photoUrl: t.photos[0]?.cloudinaryUrl ?? null,
+    photoUrl: t.photos[0]?.s3Url ?? null,
   }));
 
   const allTeamIds = teams.map((t) => t.id);
