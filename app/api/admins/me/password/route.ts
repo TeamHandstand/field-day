@@ -7,7 +7,7 @@ import { audit } from "@/lib/audit";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8).max(200),
+  newPassword: z.string().min(3),
 });
 
 export async function POST(req: Request) {

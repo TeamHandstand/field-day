@@ -18,7 +18,7 @@ export async function GET() {
 const createSchema = z.object({
   email: z.string().email().max(254),
   name: z.string().max(120).optional().nullable(),
-  password: z.string().min(8).max(200),
+  password: z.string().min(3),
 });
 
 export async function POST(req: Request) {

@@ -36,8 +36,8 @@ export default function AdminsPage() {
     e.preventDefault();
     setCreateError(null);
     setCreateNotice(null);
-    if (form.password.length < 8) {
-      setCreateError("Password must be at least 8 characters.");
+    if (form.password.length < 3) {
+      setCreateError("Password must be at least 3 characters.");
       return;
     }
     setCreating(true);
@@ -82,8 +82,8 @@ export default function AdminsPage() {
       setPwError("New passwords don't match.");
       return;
     }
-    if (pwForm.next.length < 8) {
-      setPwError("New password must be at least 8 characters.");
+    if (pwForm.next.length < 3) {
+      setPwError("New password must be at least 3 characters.");
       return;
     }
     setPwSaving(true);
