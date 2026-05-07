@@ -1,6 +1,6 @@
 "use client";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 
 export default function LoginPage() {
@@ -11,10 +11,26 @@ export default function LoginPage() {
   );
 }
 
+const DEFAULT_CALLBACK = "/admin/events";
+
+// Normalize whatever NextAuth handed us in `?callbackUrl=` down to a
+// same-origin pathname (+ search). Middleware sets this to a fully-qualified
+// URL by default, which breaks router.push and lets attackers smuggle in
+// off-site redirects. Anything we can't validate falls back to the default.
+function safeCallbackPath(raw: string | null): string {
+  if (!raw) return DEFAULT_CALLBACK;
+  try {
+    const u = new URL(raw, window.location.origin);
+    if (u.origin !== window.location.origin) return DEFAULT_CALLBACK;
+    if (!u.pathname.startsWith("/admin")) return DEFAULT_CALLBACK;
+    return u.pathname + u.search;
+  } catch {
+    return DEFAULT_CALLBACK;
+  }
+}
+
 function LoginForm() {
-  const router = useRouter();
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") ?? "/admin/events";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
@@ -25,9 +41,16 @@ function LoginForm() {
     setErr(null);
     setLoading(true);
     const res = await signIn("credentials", { email, password, redirect: false });
+    if (res?.ok) {
+      // Hard-navigate so the browser issues a fresh request that carries
+      // the just-set session cookie through middleware. router.push uses
+      // the App Router cache and can race the cookie write, leaving the
+      // user bouncing back to /admin/login.
+      window.location.assign(safeCallbackPath(params.get("callbackUrl")));
+      return;
+    }
     setLoading(false);
-    if (res?.ok) router.push(callbackUrl);
-    else setErr("Invalid email or password");
+    setErr("Invalid email or password");
   };
 
   return (
