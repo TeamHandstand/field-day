@@ -1,0 +1,209 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AggregationRule {
+  single
+  sum_of_ranks
+}
+
+enum InputRule {
+  single_value
+  sum_of_pct_deviation
+  abs_deviation_from_target
+}
+
+enum SortDirection {
+  asc
+  desc
+}
+
+model Admin {
+  id             String          @id @default(cuid())
+  email          String          @unique
+  hashedPassword String
+  name           String?
+  createdAt      DateTime        @default(now())
+  scoreEntries   ScoreEntry[]
+  editLogs       ScoreEditLog[]
+}
+
+model Event {
+  id                 String     @id @default(cuid())
+  name               String
+  createdAt          DateTime   @default(now())
+  isLocked           Boolean    @default(false)
+  isFinalized        Boolean    @default(false)
+  lockedAt           DateTime?
+  finalizedAt        DateTime?
+  finalizedSnapshot  Json?
+  teams              Team[]
+  activities         Activity[]
+}
+
+model Team {
+  id            String        @id @default(cuid())
+  eventId       String
+  event         Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  teamNumber    Int
+  name          String
+  cohortNumber  Int?
+  createdAt     DateTime      @default(now())
+  rosterUsers   RosterUser[]
+  photos        TeamPhoto[]
+  scoreEntries  ScoreEntry[]
+
+  @@unique([eventId, teamNumber])
+  @@index([eventId])
+}
+
+model TeamPhoto {
+  id                 String   @id @default(cuid())
+  teamId             String
+  team               Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  cloudinaryUrl      String
+  cloudinaryPublicId String
+  displayOrder       Int      @default(0)
+  uploadedAt         DateTime @default(now())
+
+  @@index([teamId])
+}
+
+model RosterUser {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name   String
+
+  @@index([teamId])
+}
+
+model ActivityTemplate {
+  id              String                  @id @default(cuid())
+  name            String
+  description     String                  @default("")
+  aggregationRule AggregationRule
+  isSystemSeeded  Boolean                 @default(false)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  subActivities   SubActivityTemplate[]
+  activities      Activity[]
+}
+
+model SubActivityTemplate {
+  id                 String                @id @default(cuid())
+  activityTemplateId String
+  activityTemplate   ActivityTemplate      @relation(fields: [activityTemplateId], references: [id], onDelete: Cascade)
+  name               String
+  displayOrder       Int                   @default(0)
+  inputRule          InputRule
+  sortDirection      SortDirection
+  inputFields        InputFieldTemplate[]
+
+  @@index([activityTemplateId])
+}
+
+model InputFieldTemplate {
+  id                    String              @id @default(cuid())
+  subActivityTemplateId String
+  subActivityTemplate   SubActivityTemplate @relation(fields: [subActivityTemplateId], references: [id], onDelete: Cascade)
+  label                 String
+  unit                  String
+  defaultTargetValue    Float?
+  displayOrder          Int                 @default(0)
+
+  @@index([subActivityTemplateId])
+}
+
+model Activity {
+  id              String            @id @default(cuid())
+  eventId         String
+  event           Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  templateId      String?
+  template        ActivityTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  name            String
+  description     String            @default("")
+  displayOrder    Int               @default(0)
+  aggregationRule AggregationRule
+  subActivities   SubActivity[]
+
+  @@index([eventId])
+}
+
+model SubActivity {
+  id            String        @id @default(cuid())
+  activityId    String
+  activity      Activity      @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  name          String
+  displayOrder  Int           @default(0)
+  inputRule     InputRule
+  sortDirection SortDirection
+  inputFields   InputField[]
+  scoreEntries  ScoreEntry[]
+
+  @@index([activityId])
+}
+
+model InputField {
+  id            String        @id @default(cuid())
+  subActivityId String
+  subActivity   SubActivity   @relation(fields: [subActivityId], references: [id], onDelete: Cascade)
+  label         String
+  unit          String
+  targetValue   Float?
+  displayOrder  Int           @default(0)
+  scoreInputs   ScoreInput[]
+
+  @@index([subActivityId])
+}
+
+model ScoreEntry {
+  id               String         @id @default(cuid())
+  teamId           String
+  team             Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  subActivityId    String
+  subActivity      SubActivity    @relation(fields: [subActivityId], references: [id], onDelete: Cascade)
+  computedValue    Float
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  createdByAdminId String?
+  createdByAdmin   Admin?         @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  inputs           ScoreInput[]
+  editLogs         ScoreEditLog[]
+
+  @@unique([teamId, subActivityId])
+  @@index([subActivityId])
+  @@index([teamId])
+}
+
+model ScoreInput {
+  id           String     @id @default(cuid())
+  scoreEntryId String
+  scoreEntry   ScoreEntry @relation(fields: [scoreEntryId], references: [id], onDelete: Cascade)
+  inputFieldId String
+  inputField   InputField @relation(fields: [inputFieldId], references: [id], onDelete: Cascade)
+  rawValue     Float
+
+  @@unique([scoreEntryId, inputFieldId])
+  @@index([scoreEntryId])
+}
+
+model ScoreEditLog {
+  id           String     @id @default(cuid())
+  scoreEntryId String
+  scoreEntry   ScoreEntry @relation(fields: [scoreEntryId], references: [id], onDelete: Cascade)
+  adminId      String?
+  admin        Admin?     @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  action       String
+  fieldChanged String?
+  oldValue     String?
+  newValue     String?
+  changedAt    DateTime   @default(now())
+
+  @@index([scoreEntryId])
+}
