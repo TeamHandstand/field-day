@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest } from "@/lib/api";
 import { publishEvent } from "@/lib/pubnub-server";
+import { audit } from "@/lib/audit";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const teams = await prisma.team.findMany({
@@ -41,6 +42,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       });
       created.push(t);
     }
+    await audit({
+      adminId: auth.adminId,
+      action: "create_batch",
+      entityType: "team",
+      eventId: params.id,
+      summary: `Pre-registered ${count} team${count === 1 ? "" : "s"} (#${startNumber}–#${startNumber + count - 1})`,
+      details: { count, startNumber },
+    });
     await publishEvent({ type: "team_changed", eventId: params.id, ts: Date.now() });
     return NextResponse.json({ teams: created });
   }
@@ -54,6 +63,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       teamNumber: parsed.data.teamNumber,
       cohortNumber: parsed.data.cohortNumber ?? null,
     },
+  });
+  await audit({
+    adminId: auth.adminId,
+    action: "create",
+    entityType: "team",
+    entityId: team.id,
+    eventId: params.id,
+    summary: `Created team #${team.teamNumber} "${team.name}"`,
   });
   await publishEvent({ type: "team_changed", eventId: params.id, ts: Date.now() });
   return NextResponse.json({ team });

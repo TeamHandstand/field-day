@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
 import { computeValue } from "@/lib/scoring";
 import { publishEvent } from "@/lib/pubnub-server";
+import { audit } from "@/lib/audit";
 
 // Saves all sub-activity scores for one (team, activity) pair in a single call.
 // Body: { teamId, activityId, subEntries: [{ subActivityId, raws: {inputFieldId: number} }] }
@@ -41,7 +42,14 @@ export async function POST(req: Request) {
   if (!activity || activity.eventId !== team.eventId) return notFound("Activity not found in event");
 
   const subById = new Map(activity.subActivities.map((s) => [s.id, s]));
-  const updatedEntries: { subActivityId: string; computedValue: number }[] = [];
+  const updatedEntries: {
+    subActivityId: string;
+    subActivityName: string;
+    computedValue: number;
+    priorComputedValue: number | null;
+    isUpdate: boolean;
+    scoreEntryId: string;
+  }[] = [];
 
   await prisma.$transaction(async (tx) => {
     for (const entry of subEntries) {
@@ -104,27 +112,61 @@ export async function POST(req: Request) {
         })),
       });
 
-      await tx.scoreEditLog.create({
-        data: {
-          scoreEntryId: saved.id,
-          adminId: auth.adminId,
-          action: prior ? "update" : "create",
-          fieldChanged: "computedValue",
-          oldValue: prior ? String(prior.computedValue) : null,
-          newValue: String(computed),
-        },
+      updatedEntries.push({
+        subActivityId: sub.id,
+        subActivityName: sub.name,
+        computedValue: computed,
+        priorComputedValue: prior?.computedValue ?? null,
+        isUpdate: !!prior,
+        scoreEntryId: saved.id,
       });
-
-      updatedEntries.push({ subActivityId: sub.id, computedValue: computed });
     }
   });
+
+  // Audit each sub-activity score that was saved.
+  for (const e of updatedEntries) {
+    await audit({
+      adminId: auth.adminId,
+      action: e.isUpdate ? "update" : "create",
+      entityType: "score",
+      entityId: e.scoreEntryId,
+      eventId: team.eventId,
+      summary: e.isUpdate
+        ? `Updated ${activity.name} → ${e.subActivityName} for team #${team.teamNumber} ${team.name} (${e.priorComputedValue} → ${e.computedValue})`
+        : `Logged ${activity.name} → ${e.subActivityName} for team #${team.teamNumber} ${team.name} = ${e.computedValue}`,
+      details: {
+        teamId: team.id,
+        teamNumber: team.teamNumber,
+        teamName: team.name,
+        activityId: activity.id,
+        activityName: activity.name,
+        subActivityId: e.subActivityId,
+        subActivityName: e.subActivityName,
+        oldComputedValue: e.priorComputedValue,
+        newComputedValue: e.computedValue,
+      },
+    });
+  }
 
   await publishEvent({
     type: "score_updated",
     eventId: team.eventId,
-    payload: { teamId, activityId, entries: updatedEntries },
+    payload: {
+      teamId,
+      activityId,
+      entries: updatedEntries.map((e) => ({
+        subActivityId: e.subActivityId,
+        computedValue: e.computedValue,
+      })),
+    },
     ts: Date.now(),
   });
 
-  return NextResponse.json({ ok: true, entries: updatedEntries });
+  return NextResponse.json({
+    ok: true,
+    entries: updatedEntries.map((e) => ({
+      subActivityId: e.subActivityId,
+      computedValue: e.computedValue,
+    })),
+  });
 }

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
 import { activityInput } from "@/lib/zod-shapes";
 import { publishEvent } from "@/lib/pubnub-server";
+import { audit } from "@/lib/audit";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const activities = await prisma.activity.findMany({
@@ -91,6 +92,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
         },
       },
     });
+    await audit({
+      adminId: auth.adminId,
+      action: "create",
+      entityType: "activity",
+      entityId: activity.id,
+      eventId: params.id,
+      summary: `Added activity "${activity.name}" from template "${template.name}"`,
+      details: { templateId: template.id, insertAt },
+    });
     await publishEvent({ type: "activity_changed", eventId: params.id, ts: Date.now() });
     return NextResponse.json({ activity });
   }
@@ -132,6 +142,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       },
     },
   });
+  await audit({
+    adminId: auth.adminId,
+    action: "create",
+    entityType: "activity",
+    entityId: activity.id,
+    eventId: params.id,
+    summary: `Created custom activity "${activity.name}"`,
+  });
   await publishEvent({ type: "activity_changed", eventId: params.id, ts: Date.now() });
   return NextResponse.json({ activity });
 }
@@ -152,6 +170,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       prisma.activity.update({ where: { id }, data: { displayOrder: idx } }),
     ),
   );
+  await audit({
+    adminId: auth.adminId,
+    action: "reorder",
+    entityType: "activity",
+    eventId: params.id,
+    summary: "Reordered activities",
+    details: { orderedIds: parsed.data.orderedIds },
+  });
   await publishEvent({ type: "activity_changed", eventId: params.id, ts: Date.now() });
   return NextResponse.json({ ok: true });
 }

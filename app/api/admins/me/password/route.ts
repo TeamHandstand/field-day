@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
+import { audit } from "@/lib/audit";
 
 const schema = z.object({
   currentPassword: z.string().min(1),
@@ -21,5 +22,12 @@ export async function POST(req: Request) {
   if (!ok) return badRequest("Current password is incorrect.");
   const hashed = await bcrypt.hash(parsed.data.newPassword, 10);
   await prisma.admin.update({ where: { id: me.id }, data: { hashedPassword: hashed } });
+  await audit({
+    adminId: auth.adminId,
+    action: "password_change",
+    entityType: "admin",
+    entityId: me.id,
+    summary: `Changed own password (${me.email})`,
+  });
   return NextResponse.json({ ok: true });
 }

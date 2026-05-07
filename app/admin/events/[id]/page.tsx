@@ -131,6 +131,9 @@ export default function EventDashboard({ params }: { params: { id: string } }) {
           <Link href={`/admin/events/${data.id}/leaderboard`} className="btn btn-secondary">
             Leaderboard
           </Link>
+          <Link href={`/admin/events/${data.id}/audit`} className="btn btn-secondary">
+            Audit
+          </Link>
           <Link href={`/public/events/${data.id}`} target="_blank" className="btn btn-ghost">
             Public view ↗
           </Link>

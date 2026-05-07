@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
+import { audit } from "@/lib/audit";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
@@ -13,6 +14,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!team) return notFound();
   const user = await prisma.rosterUser.create({
     data: { teamId: params.id, name: parsed.data.name },
+  });
+  await audit({
+    adminId: auth.adminId,
+    action: "create",
+    entityType: "roster",
+    entityId: user.id,
+    eventId: team.eventId,
+    summary: `Added "${user.name}" to team #${team.teamNumber} ${team.name}`,
   });
   return NextResponse.json({ rosterUser: user });
 }

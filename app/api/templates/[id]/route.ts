@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, notFound, badRequest } from "@/lib/api";
 import { activityInput } from "@/lib/zod-shapes";
+import { audit } from "@/lib/audit";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const template = await prisma.activityTemplate.findUnique({
@@ -59,12 +60,28 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       },
     });
   });
+  await audit({
+    adminId: auth.adminId,
+    action: "update",
+    entityType: "template",
+    entityId: t.id,
+    summary: `Updated template "${t.name}"`,
+  });
   return NextResponse.json({ template: t });
 }
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
+  const existing = await prisma.activityTemplate.findUnique({ where: { id: params.id } });
+  if (!existing) return notFound();
   await prisma.activityTemplate.delete({ where: { id: params.id } });
+  await audit({
+    adminId: auth.adminId,
+    action: "delete",
+    entityType: "template",
+    entityId: existing.id,
+    summary: `Deleted template "${existing.name}"`,
+  });
   return NextResponse.json({ ok: true });
 }

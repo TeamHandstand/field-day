@@ -12,6 +12,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Link href="/admin/events" className="hover:text-brand">Events</Link>
             <Link href="/admin/templates" className="hover:text-brand">Templates</Link>
             <Link href="/admin/admins" className="hover:text-brand">Admins</Link>
+            <Link href="/admin/audit" className="hover:text-brand">Audit</Link>
             <Link href="/admin/scoring-reference" className="hover:text-brand">Scoring</Link>
           </nav>
         </div>

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
 import { publishEvent } from "@/lib/pubnub-server";
+import { audit } from "@/lib/audit";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const photos = await prisma.teamPhoto.findMany({
@@ -37,6 +38,15 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       displayOrder: (last?.displayOrder ?? -1) + 1,
     },
   });
+  await audit({
+    adminId: auth.adminId,
+    action: "create",
+    entityType: "photo",
+    entityId: photo.id,
+    eventId: team.eventId,
+    summary: `Uploaded photo for team #${team.teamNumber} ${team.name}`,
+    details: { s3Key: photo.s3Key },
+  });
   await publishEvent({
     type: "team_changed",
     eventId: team.eventId,
@@ -61,6 +71,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       prisma.teamPhoto.update({ where: { id }, data: { displayOrder: idx } }),
     ),
   );
+  await audit({
+    adminId: auth.adminId,
+    action: "reorder",
+    entityType: "photo",
+    eventId: team.eventId,
+    summary: `Reordered photos for team #${team.teamNumber} ${team.name}`,
+    details: { orderedIds: parsed.data.orderedIds },
+  });
   await publishEvent({
     type: "team_changed",
     eventId: team.eventId,

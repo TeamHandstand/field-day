@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
 import { publishEvent } from "@/lib/pubnub-server";
+import { audit } from "@/lib/audit";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const activity = await prisma.activity.findUnique({
@@ -68,6 +69,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     }
   });
 
+  await audit({
+    adminId: auth.adminId,
+    action: "update",
+    entityType: "activity",
+    entityId: params.id,
+    eventId: activity.eventId,
+    summary: `Configured activity "${parsed.data.name ?? activity.name}"`,
+    details: parsed.data,
+  });
   await publishEvent({ type: "activity_changed", eventId: activity.eventId, ts: Date.now() });
   const updated = await prisma.activity.findUnique({
     where: { id: params.id },
@@ -91,6 +101,14 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
   if (!activity) return notFound();
   if (activity.event.isLocked) return badRequest("Event is locked");
   await prisma.activity.delete({ where: { id: params.id } });
+  await audit({
+    adminId: auth.adminId,
+    action: "delete",
+    entityType: "activity",
+    entityId: activity.id,
+    eventId: activity.eventId,
+    summary: `Removed activity "${activity.name}"`,
+  });
   await publishEvent({ type: "activity_changed", eventId: activity.eventId, ts: Date.now() });
   return NextResponse.json({ ok: true });
 }

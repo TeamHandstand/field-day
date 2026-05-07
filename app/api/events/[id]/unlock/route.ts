@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, notFound } from "@/lib/api";
 import { publishEvent } from "@/lib/pubnub-server";
+import { audit } from "@/lib/audit";
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
@@ -11,6 +12,14 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
   await prisma.event.update({
     where: { id: params.id },
     data: { isLocked: false, lockedAt: null },
+  });
+  await audit({
+    adminId: auth.adminId,
+    action: "unlock",
+    entityType: "event",
+    entityId: params.id,
+    eventId: params.id,
+    summary: `Unlocked event "${event.name}"`,
   });
   await publishEvent({ type: "event_unlocked", eventId: params.id, ts: Date.now() });
   return NextResponse.json({ ok: true });

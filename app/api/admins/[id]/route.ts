@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
+import { audit } from "@/lib/audit";
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
@@ -15,5 +16,12 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return badRequest("There must be at least one admin.");
   }
   await prisma.admin.delete({ where: { id: params.id } });
+  await audit({
+    adminId: auth.adminId,
+    action: "delete",
+    entityType: "admin",
+    entityId: target.id,
+    summary: `Removed admin ${target.email}`,
+  });
   return NextResponse.json({ ok: true });
 }

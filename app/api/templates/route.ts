@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest } from "@/lib/api";
 import { activityInput } from "@/lib/zod-shapes";
+import { audit } from "@/lib/audit";
 
 export async function GET() {
   const templates = await prisma.activityTemplate.findMany({
@@ -50,6 +51,13 @@ export async function POST(req: Request) {
         include: { inputFields: { orderBy: { displayOrder: "asc" } } },
       },
     },
+  });
+  await audit({
+    adminId: auth.adminId,
+    action: "create",
+    entityType: "template",
+    entityId: t.id,
+    summary: `Created template "${t.name}"`,
   });
   return NextResponse.json({ template: t });
 }

@@ -24,13 +24,13 @@ enum SortDirection {
 }
 
 model Admin {
-  id             String          @id @default(cuid())
-  email          String          @unique
+  id             String       @id @default(cuid())
+  email          String       @unique
   hashedPassword String
   name           String?
-  createdAt      DateTime        @default(now())
+  createdAt      DateTime     @default(now())
   scoreEntries   ScoreEntry[]
-  editLogs       ScoreEditLog[]
+  auditLogs      AuditLog[]
 }
 
 model Event {
@@ -44,6 +44,7 @@ model Event {
   finalizedSnapshot  Json?
   teams              Team[]
   activities         Activity[]
+  auditLogs          AuditLog[]
 }
 
 model Team {
@@ -163,18 +164,17 @@ model InputField {
 }
 
 model ScoreEntry {
-  id               String         @id @default(cuid())
+  id               String       @id @default(cuid())
   teamId           String
-  team             Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team             Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   subActivityId    String
-  subActivity      SubActivity    @relation(fields: [subActivityId], references: [id], onDelete: Cascade)
+  subActivity      SubActivity  @relation(fields: [subActivityId], references: [id], onDelete: Cascade)
   computedValue    Float
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
   createdByAdminId String?
-  createdByAdmin   Admin?         @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  createdByAdmin   Admin?       @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
   inputs           ScoreInput[]
-  editLogs         ScoreEditLog[]
 
   @@unique([teamId, subActivityId])
   @@index([subActivityId])
@@ -193,17 +193,22 @@ model ScoreInput {
   @@index([scoreEntryId])
 }
 
-model ScoreEditLog {
-  id           String     @id @default(cuid())
-  scoreEntryId String
-  scoreEntry   ScoreEntry @relation(fields: [scoreEntryId], references: [id], onDelete: Cascade)
-  adminId      String?
-  admin        Admin?     @relation(fields: [adminId], references: [id], onDelete: SetNull)
-  action       String
-  fieldChanged String?
-  oldValue     String?
-  newValue     String?
-  changedAt    DateTime   @default(now())
+model AuditLog {
+  id          String   @id @default(cuid())
+  adminId     String?
+  admin       Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  adminEmail  String?  // denormalized so the row survives admin deletion
+  action      String   // "create" | "update" | "delete" | "finalize" | "unlock" | "reorder" | "password_change" | ...
+  entityType  String   // "event" | "team" | "activity" | "template" | "photo" | "roster" | "admin" | "score" | ...
+  entityId    String?
+  eventId     String?
+  event       Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  summary     String
+  details     Json?
+  changedAt   DateTime @default(now())
 
-  @@index([scoreEntryId])
+  @@index([adminId])
+  @@index([eventId])
+  @@index([entityType, entityId])
+  @@index([changedAt])
 }

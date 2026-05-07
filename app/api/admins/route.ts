@@ -3,6 +3,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest } from "@/lib/api";
+import { audit } from "@/lib/audit";
 
 export async function GET() {
   const auth = await requireAdmin();
@@ -33,6 +34,13 @@ export async function POST(req: Request) {
   const admin = await prisma.admin.create({
     data: { email, name: parsed.data.name ?? null, hashedPassword: hashed },
     select: { id: true, email: true, name: true, createdAt: true },
+  });
+  await audit({
+    adminId: auth.adminId,
+    action: "create",
+    entityType: "admin",
+    entityId: admin.id,
+    summary: `Added admin ${admin.email}`,
   });
   return NextResponse.json({ admin });
 }

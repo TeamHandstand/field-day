@@ -163,17 +163,19 @@ CREATE TABLE "ScoreInput" (
 );
 
 -- CreateTable
-CREATE TABLE "ScoreEditLog" (
+CREATE TABLE "AuditLog" (
     "id" TEXT NOT NULL,
-    "scoreEntryId" TEXT NOT NULL,
     "adminId" TEXT,
+    "adminEmail" TEXT,
     "action" TEXT NOT NULL,
-    "fieldChanged" TEXT,
-    "oldValue" TEXT,
-    "newValue" TEXT,
+    "entityType" TEXT NOT NULL,
+    "entityId" TEXT,
+    "eventId" TEXT,
+    "summary" TEXT NOT NULL,
+    "details" JSONB,
     "changedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "ScoreEditLog_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "AuditLog_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -222,7 +224,16 @@ CREATE INDEX "ScoreInput_scoreEntryId_idx" ON "ScoreInput"("scoreEntryId");
 CREATE UNIQUE INDEX "ScoreInput_scoreEntryId_inputFieldId_key" ON "ScoreInput"("scoreEntryId", "inputFieldId");
 
 -- CreateIndex
-CREATE INDEX "ScoreEditLog_scoreEntryId_idx" ON "ScoreEditLog"("scoreEntryId");
+CREATE INDEX "AuditLog_adminId_idx" ON "AuditLog"("adminId");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_eventId_idx" ON "AuditLog"("eventId");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_entityType_entityId_idx" ON "AuditLog"("entityType", "entityId");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_changedAt_idx" ON "AuditLog"("changedAt");
 
 -- AddForeignKey
 ALTER TABLE "Team" ADD CONSTRAINT "Team_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -267,7 +278,7 @@ ALTER TABLE "ScoreInput" ADD CONSTRAINT "ScoreInput_scoreEntryId_fkey" FOREIGN K
 ALTER TABLE "ScoreInput" ADD CONSTRAINT "ScoreInput_inputFieldId_fkey" FOREIGN KEY ("inputFieldId") REFERENCES "InputField"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ScoreEditLog" ADD CONSTRAINT "ScoreEditLog_scoreEntryId_fkey" FOREIGN KEY ("scoreEntryId") REFERENCES "ScoreEntry"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "Admin"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ScoreEditLog" ADD CONSTRAINT "ScoreEditLog_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "Admin"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE SET NULL ON UPDATE CASCADE;
