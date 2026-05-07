@@ -1,6 +1,8 @@
-node_modules/
-.next/
-out/
+node_modules
+.next
+out
+.git
+.gitignore
 .env
 .env.local
 .env.*.local
@@ -8,5 +10,8 @@ out/
 .DS_Store
 .vercel
 .turbo
-coverage/
+coverage
 *.tsbuildinfo
+README.md
+.vscode
+.idea
