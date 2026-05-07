@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useEventChannel } from "@/lib/pubnub-client";
 import type { LeaderboardData } from "@/lib/leaderboard";
 
@@ -9,20 +10,18 @@ type Props = {
   initialCohort?: string;
 };
 
-function fmtRank(r: number | undefined): string {
-  if (r === undefined) return "—";
-  return Number.isInteger(r) ? `${r}` : r.toFixed(1);
-}
-
 function ordinal(n: number): string {
   const suffix = ["th", "st", "nd", "rd"];
   const v = n % 100;
   return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`;
 }
 
+type SortBy = { kind: "default" } | { kind: "activity"; activityId: string };
+
 export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" }: Props) {
   const [data, setData] = useState<LeaderboardData | null>(null);
   const [cohort, setCohort] = useState(initialCohort);
+  const [sortBy, setSortBy] = useState<SortBy>({ kind: "default" });
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/events/${eventId}/leaderboard`);
@@ -48,7 +47,25 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
   const finalized = data.finalized;
   const isFinalized = data.event.isFinalized && !!finalized;
 
+  // Resolve the rank a team holds in a given activity column, picking the
+  // finalized snapshot when available so the visible sort matches the visible numbers.
+  const activityRankFor = (teamId: string, activityId: string): number | undefined => {
+    if (isFinalized) {
+      return finalized!.activities.find((a) => a.activityId === activityId)?.activityRanks[teamId];
+    }
+    return data.liveActivityRanks[activityId]?.[teamId];
+  };
+
   const sortedTeams = [...visibleTeams].sort((a, b) => {
+    if (sortBy.kind === "activity") {
+      const ra = activityRankFor(a.id, sortBy.activityId);
+      const rb = activityRankFor(b.id, sortBy.activityId);
+      if (ra == null && rb == null) return a.teamNumber - b.teamNumber;
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      if (ra !== rb) return ra - rb;
+      return a.teamNumber - b.teamNumber;
+    }
     if (isFinalized) {
       const ra = finalized!.globalRanks[a.id];
       const rb = finalized!.globalRanks[b.id];
@@ -58,6 +75,14 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
     }
     return a.teamNumber - b.teamNumber;
   });
+
+  const onHeaderClick = (activityId: string) => {
+    setSortBy((prev) =>
+      prev.kind === "activity" && prev.activityId === activityId
+        ? { kind: "default" }
+        : { kind: "activity", activityId },
+    );
+  };
 
   return (
     <div className={variant === "public" ? "space-y-4 text-slate-100" : "space-y-4"}>
@@ -90,6 +115,30 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
         </p>
       )}
 
+      {sortBy.kind === "activity" && (
+        <div
+          className={
+            variant === "public"
+              ? "flex items-center gap-2 text-sm text-slate-300"
+              : "flex items-center gap-2 text-xs text-slate-500"
+          }
+        >
+          <span>
+            Sorted by{" "}
+            <strong>
+              {data.activities.find((a) => a.id === sortBy.activityId)?.name ?? "activity"}
+            </strong>{" "}
+            rank.
+          </span>
+          <button
+            onClick={() => setSortBy({ kind: "default" })}
+            className="underline hover:text-brand"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table
           className={
@@ -102,11 +151,30 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
             <tr className={variant === "public" ? "text-slate-400" : "text-slate-500"}>
               <th className="px-2 py-2 text-left">Rank</th>
               <th className="px-2 py-2 text-left">Team</th>
-              {data.activities.map((a) => (
-                <th key={a.id} className="px-2 py-2 text-center">
-                  {a.name}
-                </th>
-              ))}
+              {data.activities.map((a) => {
+                const isSorted = sortBy.kind === "activity" && sortBy.activityId === a.id;
+                return (
+                  <th key={a.id} className="px-2 py-2 text-center">
+                    <button
+                      onClick={() => onHeaderClick(a.id)}
+                      className={
+                        isSorted
+                          ? variant === "public"
+                            ? "text-brand underline"
+                            : "text-brand underline"
+                          : variant === "public"
+                            ? "hover:text-slate-200"
+                            : "hover:text-brand"
+                      }
+                      aria-label={`Sort by ${a.name}`}
+                      title={isSorted ? "Click to clear sort" : `Sort by ${a.name}`}
+                    >
+                      {a.name}
+                      <span className="ml-1 text-[10px]">{isSorted ? "▼" : "↕"}</span>
+                    </button>
+                  </th>
+                );
+              })}
               {isFinalized && <th className="px-2 py-2 text-center font-semibold">Total</th>}
             </tr>
           </thead>
@@ -114,6 +182,29 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
             {sortedTeams.map((t) => {
               const totalPts = isFinalized ? finalized!.totals[t.id] ?? 0 : null;
               const globalRank = isFinalized ? finalized!.globalRanks[t.id] : null;
+              const teamCellInner = (
+                <div className="flex items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-slate-300 text-xs font-bold text-slate-700">
+                    {t.photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={t.photoUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      `#${t.teamNumber}`
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-semibold">{t.name}</div>
+                    <div
+                      className={
+                        variant === "public" ? "text-xs text-slate-400" : "text-xs text-slate-500"
+                      }
+                    >
+                      #{t.teamNumber}
+                      {t.cohortNumber != null ? ` · Cohort ${t.cohortNumber}` : ""}
+                    </div>
+                  </div>
+                </div>
+              );
               return (
                 <tr
                   key={t.id}
@@ -127,27 +218,17 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                     {globalRank != null ? ordinal(Math.round(globalRank)) : "—"}
                   </td>
                   <td className="px-2 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-slate-300 text-xs font-bold text-slate-700">
-                        {t.photoUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={t.photoUrl} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          `#${t.teamNumber}`
-                        )}
-                      </div>
-                      <div>
-                        <div className="font-semibold">{t.name}</div>
-                        <div
-                          className={
-                            variant === "public" ? "text-xs text-slate-400" : "text-xs text-slate-500"
-                          }
-                        >
-                          #{t.teamNumber}
-                          {t.cohortNumber != null ? ` · Cohort ${t.cohortNumber}` : ""}
-                        </div>
-                      </div>
-                    </div>
+                    {variant === "admin" ? (
+                      <Link
+                        href={`/admin/events/${eventId}/teams/${t.id}`}
+                        className="block hover:text-brand"
+                        title="Open team detail"
+                      >
+                        {teamCellInner}
+                      </Link>
+                    ) : (
+                      teamCellInner
+                    )}
                   </td>
                   {data.activities.map((a) => {
                     if (isFinalized) {
