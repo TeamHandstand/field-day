@@ -1,6 +1,7 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import type { LeaderboardData } from "@/lib/leaderboard";
 
 type Team = {
   id: string;
@@ -11,8 +12,20 @@ type Team = {
   rosterUsers: { id: string; name: string }[];
 };
 
+function ordinal(n: number): string {
+  const suffix = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`;
+}
+
+function fmt(n: number): string {
+  if (Number.isInteger(n)) return n.toString();
+  return n.toFixed(2);
+}
+
 export default function TeamDetail({ params }: { params: { id: string; tid: string } }) {
   const [team, setTeam] = useState<Team | null>(null);
+  const [board, setBoard] = useState<LeaderboardData | null>(null);
   const [name, setName] = useState("");
   const [number, setNumber] = useState<number>(1);
   const [cohort, setCohort] = useState<string>("");
@@ -21,15 +34,21 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
   const [uploading, setUploading] = useState(false);
 
   const load = useCallback(async () => {
-    const r = await fetch(`/api/teams/${params.tid}`);
-    if (r.ok) {
-      const t = (await r.json()).team as Team;
+    const [tRes, bRes] = await Promise.all([
+      fetch(`/api/teams/${params.tid}`),
+      fetch(`/api/events/${params.id}/leaderboard`),
+    ]);
+    if (tRes.ok) {
+      const t = (await tRes.json()).team as Team;
       setTeam(t);
       setName(t.name);
       setNumber(t.teamNumber);
       setCohort(t.cohortNumber ? String(t.cohortNumber) : "");
     }
-  }, [params.tid]);
+    if (bRes.ok) {
+      setBoard(await bRes.json());
+    }
+  }, [params.id, params.tid]);
 
   useEffect(() => {
     load();
@@ -126,6 +145,42 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
     load();
   };
 
+  // Per-activity status & results for this team. An activity is "completed" only
+  // when every sub-activity has a score for this team — partial logs surface
+  // separately so the host can see what's still outstanding.
+  const activityRows = useMemo(() => {
+    if (!team || !board) return [];
+    return board.activities.map((a) => {
+      const subs = a.subActivities.map((s) => {
+        const score = board.scores.find(
+          (sc) => sc.activityId === a.id && sc.subActivityId === s.id && sc.teamId === team.id,
+        );
+        return {
+          sub: s,
+          computed: score?.computedValue ?? null,
+          rank: board.liveSubActivityRanks[s.id]?.[team.id] ?? null,
+        };
+      });
+      const allLogged = subs.every((s) => s.computed != null);
+      const someLogged = subs.some((s) => s.computed != null);
+      const finA = board.finalized?.activities.find((fa) => fa.activityId === a.id);
+      return {
+        activity: a,
+        subs,
+        allLogged,
+        someLogged,
+        activityRank: board.liveActivityRanks[a.id]?.[team.id] ?? null,
+        finalRank: finA?.activityRanks[team.id] ?? null,
+        finalPoints: finA?.points[team.id] ?? null,
+      };
+    });
+  }, [team, board]);
+
+  const completed = activityRows.filter((r) => r.allLogged);
+  const inProgress = activityRows.filter((r) => !r.allLogged && r.someLogged);
+  const notStarted = activityRows.filter((r) => !r.someLogged);
+  const isFinalized = !!board?.event.isFinalized && !!board?.finalized;
+
   if (!team) return <p>Loading…</p>;
 
   return (
@@ -133,6 +188,151 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
       <Link href={`/admin/events/${params.id}/teams`} className="text-sm text-slate-500 hover:text-brand">
         ← Teams
       </Link>
+
+      <header className="flex items-center gap-3">
+        <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-lg font-bold text-slate-600">
+          {team.photos[0] ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={team.photos[0].s3Url} alt="" className="h-full w-full object-cover" />
+          ) : (
+            `#${team.teamNumber}`
+          )}
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold">
+            #{team.teamNumber} {team.name}
+          </h1>
+          <p className="text-sm text-slate-500">
+            {team.cohortNumber ? `Cohort ${team.cohortNumber}` : "No cohort"}
+          </p>
+        </div>
+      </header>
+
+      <section className="card space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Activity results</h2>
+          {board && (
+            <div className="text-xs text-slate-500">
+              {completed.length}/{board.activities.length} complete
+              {inProgress.length > 0 ? ` · ${inProgress.length} partial` : ""}
+            </div>
+          )}
+        </div>
+
+        {board && board.activities.length === 0 && (
+          <p className="text-sm text-slate-500">This event has no activities yet.</p>
+        )}
+
+        {completed.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Completed
+            </h3>
+            <ul className="space-y-2">
+              {completed.map((row) => (
+                <li key={row.activity.id} className="rounded-md border border-slate-200 p-3">
+                  <div className="flex items-center justify-between">
+                    <Link
+                      href={`/admin/events/${params.id}/activities/${row.activity.id}/log`}
+                      className="font-semibold hover:text-brand"
+                    >
+                      {row.activity.name}
+                    </Link>
+                    <div className="flex items-center gap-2">
+                      {isFinalized && row.finalPoints != null && (
+                        <span className="badge badge-blue">{row.finalPoints} pts</span>
+                      )}
+                      {(isFinalized ? row.finalRank : row.activityRank) != null && (
+                        <span className="badge badge-green">
+                          {ordinal(
+                            Math.round(
+                              (isFinalized ? row.finalRank : row.activityRank) as number,
+                            ),
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <table className="mt-2 w-full text-sm">
+                    <tbody>
+                      {row.subs.map(({ sub, computed, rank }) => (
+                        <tr key={sub.id} className="border-t border-slate-100">
+                          <td className="py-1 pr-2 text-slate-600">{sub.name}</td>
+                          <td className="py-1 pr-2 text-right font-medium">
+                            {computed != null ? fmt(computed) : "—"}
+                            {sub.inputFields[0]?.unit && (
+                              <span className="ml-1 text-xs text-slate-500">
+                                {sub.inputFields[0].unit}
+                              </span>
+                            )}
+                          </td>
+                          <td className="w-16 py-1 text-right text-xs text-slate-500">
+                            {rank != null ? ordinal(Math.round(rank)) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {inProgress.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+              Partially logged
+            </h3>
+            <ul className="space-y-2">
+              {inProgress.map((row) => {
+                const missing = row.subs.filter((s) => s.computed == null);
+                return (
+                  <li
+                    key={row.activity.id}
+                    className="rounded-md border border-amber-200 bg-amber-50 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <Link
+                        href={`/admin/events/${params.id}/activities/${row.activity.id}/log`}
+                        className="font-semibold hover:text-brand"
+                      >
+                        {row.activity.name}
+                      </Link>
+                      <span className="text-xs text-amber-800">
+                        Missing {missing.length} of {row.subs.length}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-amber-800">
+                      Awaiting: {missing.map((m) => m.sub.name).join(", ")}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {notStarted.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Not started
+            </h3>
+            <ul className="flex flex-wrap gap-2">
+              {notStarted.map((row) => (
+                <li key={row.activity.id}>
+                  <Link
+                    href={`/admin/events/${params.id}/activities/${row.activity.id}/log`}
+                    className="badge hover:border-brand"
+                  >
+                    {row.activity.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
 
       <section className="card space-y-3">
         <h2 className="font-semibold">Team details</h2>

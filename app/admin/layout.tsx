@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminNav } from "@/components/AdminNav";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,13 +9,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Link href="/admin/events" className="text-lg font-semibold tracking-tight">
             Field Day
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
-            <Link href="/admin/events" className="hover:text-brand">Events</Link>
-            <Link href="/admin/templates" className="hover:text-brand">Templates</Link>
-            <Link href="/admin/admins" className="hover:text-brand">Admins</Link>
-            <Link href="/admin/audit" className="hover:text-brand">Audit</Link>
-            <Link href="/admin/scoring-reference" className="hover:text-brand">Scoring</Link>
-          </nav>
+          <AdminNav />
         </div>
       </header>
       <main className="mx-auto max-w-5xl p-4">{children}</main>

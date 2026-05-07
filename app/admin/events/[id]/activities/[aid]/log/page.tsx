@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { explainActivity } from "@/lib/explain";
 import { TimeInput, shouldUseTimeInput } from "@/components/TimeInput";
+import { rankActivity, type ActivityShape, type SubActivityScore } from "@/lib/scoring";
 
 type SubActivity = {
   id: string;
@@ -32,6 +33,14 @@ type ScoreEntry = {
   computedValue: number;
 };
 
+type SortMode = "number" | "rank";
+
+function ordinal(n: number): string {
+  const suffix = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`;
+}
+
 export default function ScoreLogPage({ params }: { params: { id: string; aid: string } }) {
   const [activity, setActivity] = useState<Activity | null>(null);
   const [eventName, setEventName] = useState<string>("");
@@ -40,6 +49,8 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
   const [openTeam, setOpenTeam] = useState<Team | null>(null);
   const [cohort, setCohort] = useState<string>("all");
   const [showExplain, setShowExplain] = useState(false);
+  const [sortBy, setSortBy] = useState<SortMode>("number");
+  const [savedTeamName, setSavedTeamName] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [a, ev] = await Promise.all([
@@ -91,11 +102,61 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
     [teams],
   );
 
+  // Compute per-team activity rank against the visible cohort. Recomputed whenever
+  // the cohort filter changes so "rank" reflects what the host is actually looking at.
+  const visibleTeams = useMemo(
+    () =>
+      cohort === "all"
+        ? teams
+        : teams.filter((t) => t.cohortNumber === parseInt(cohort, 10)),
+    [teams, cohort],
+  );
+
+  const ranks = useMemo<Map<string, number>>(() => {
+    if (!activity) return new Map();
+    const visibleIds = new Set(visibleTeams.map((t) => t.id));
+    const cohortScores: SubActivityScore[] = [];
+    for (const [teamId, entries] of Object.entries(scores)) {
+      if (!visibleIds.has(teamId)) continue;
+      for (const e of entries) {
+        cohortScores.push({
+          subActivityId: e.subActivityId,
+          teamId,
+          computedValue: e.computedValue,
+        });
+      }
+    }
+    const shape: ActivityShape = {
+      id: activity.id,
+      aggregationRule: activity.aggregationRule,
+      subActivities: activity.subActivities.map((s) => ({
+        id: s.id,
+        inputRule: s.inputRule,
+        sortDirection: s.sortDirection,
+        inputFields: s.inputFields.map((f) => ({ id: f.id, targetValue: f.targetValue })),
+      })),
+    };
+    const r = rankActivity(shape, cohortScores, visibleTeams.map((t) => t.id));
+    return r.ranks;
+  }, [activity, visibleTeams, scores]);
+
   if (!activity) return <p>Loading…</p>;
 
-  const visibleTeams =
-    cohort === "all" ? teams : teams.filter((t) => t.cohortNumber === parseInt(cohort, 10));
   const totalSubs = activity.subActivities.length;
+
+  const sortedTeams = [...visibleTeams].sort((a, b) => {
+    if (sortBy === "rank") {
+      const ra = ranks.get(a.id);
+      const rb = ranks.get(b.id);
+      if (ra == null && rb == null) return a.teamNumber - b.teamNumber;
+      if (ra == null) return 1;
+      if (rb == null) return -1;
+      if (ra !== rb) return ra - rb;
+    }
+    return a.teamNumber - b.teamNumber;
+  });
+
+  const cohortLabel = cohort === "all" ? "all teams" : `cohort ${cohort}`;
 
   return (
     <div className="space-y-4">
@@ -120,6 +181,21 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
         </div>
       </div>
 
+      {savedTeamName && (
+        <div className="flex items-center justify-between rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-800">
+          <span>
+            <strong>Saved</strong> {savedTeamName}&apos;s score for {activity.name}.
+          </span>
+          <button
+            className="text-green-700 hover:text-green-900"
+            onClick={() => setSavedTeamName(null)}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {cohorts.length > 0 && (
         <div className="flex flex-wrap gap-2">
           <button
@@ -140,8 +216,34 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
         </div>
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+          <button
+            onClick={() => setSortBy("number")}
+            className={`rounded px-3 py-1 ${
+              sortBy === "number" ? "bg-brand text-white" : "text-slate-600 hover:text-brand"
+            }`}
+          >
+            Sort by team #
+          </button>
+          <button
+            onClick={() => setSortBy("rank")}
+            className={`rounded px-3 py-1 ${
+              sortBy === "rank" ? "bg-brand text-white" : "text-slate-600 hover:text-brand"
+            }`}
+          >
+            Sort by rank
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">
+          {sortBy === "rank"
+            ? `Ranked against ${cohortLabel}. Teams with incomplete scores appear last.`
+            : `Listed by team number across ${cohortLabel}.`}
+        </p>
+      </div>
+
       <ul className="space-y-2">
-        {visibleTeams.map((t) => {
+        {sortedTeams.map((t) => {
           const teamScores = scores[t.id] ?? [];
           const loggedCount = activity.subActivities.filter((s) =>
             teamScores.some((sc) => sc.subActivityId === s.id),
@@ -161,6 +263,7 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
             badgeText = `${loggedCount} / ${totalSubs}`;
             badgeClass = "badge-green";
           }
+          const rank = ranks.get(t.id);
           return (
             <li key={t.id}>
               <button
@@ -168,6 +271,11 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
                 className="card flex w-full items-center justify-between text-left hover:border-brand"
               >
                 <div className="flex items-center gap-3">
+                  {sortBy === "rank" && (
+                    <div className="w-10 text-center text-lg font-bold text-slate-700">
+                      {rank != null ? ordinal(Math.round(rank)) : "—"}
+                    </div>
+                  )}
                   <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-xs font-bold text-slate-600">
                     {t.photos[0] ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -200,8 +308,9 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
         <ScoreEditor
           activity={activity}
           team={openTeam}
-          onClose={() => {
-            setOpenTeam(null);
+          onClose={() => setOpenTeam(null)}
+          onSaved={(teamLabel) => {
+            setSavedTeamName(teamLabel);
             load();
           }}
         />
@@ -251,16 +360,22 @@ function ScoreEditor({
   activity,
   team,
   onClose,
+  onSaved,
 }: {
   activity: Activity;
   team: Team;
   onClose: () => void;
+  onSaved: (teamLabel: string) => void;
 }) {
   const [raws, setRaws] = useState<Record<string, string>>({});
   const [savedSubIds, setSavedSubIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // When existing scores are found, force the host to explicitly opt in to editing
+  // them so they don't accidentally overwrite a submission they thought was final.
+  const [unlocked, setUnlocked] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -291,6 +406,10 @@ function ScoreEditor({
   const completeCount = subStatuses.filter((x) => x.status === "complete").length;
   const partialCount = subStatuses.filter((x) => x.status === "partial").length;
 
+  const hasAnySaved = savedSubIds.size > 0;
+  const allSaved = savedSubIds.size === activity.subActivities.length;
+  const isLocked = hasAnySaved && !unlocked;
+
   const save = async () => {
     setSaving(true);
     setError(null);
@@ -315,7 +434,13 @@ function ScoreEditor({
         setError((await res.json()).error ?? "Save failed");
         return;
       }
-      onClose();
+      // Briefly show in-modal confirmation, then notify parent so they can show a
+      // toast and refresh data.
+      setJustSaved(true);
+      setTimeout(() => {
+        onSaved(`#${team.teamNumber} ${team.name}`);
+        onClose();
+      }, 700);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -338,6 +463,49 @@ function ScoreEditor({
             </p>
           )}
         </div>
+
+        {!loading && hasAnySaved && (
+          <div
+            className={`rounded-md border px-3 py-2 text-sm ${
+              unlocked
+                ? "border-amber-300 bg-amber-50 text-amber-900"
+                : "border-blue-300 bg-blue-50 text-blue-900"
+            }`}
+          >
+            {unlocked ? (
+              <div className="flex items-start justify-between gap-2">
+                <span>
+                  Editing existing {allSaved ? "submission" : "submissions"}. Saving will
+                  overwrite the prior value.
+                </span>
+                <button
+                  className="text-xs underline"
+                  onClick={() => setUnlocked(false)}
+                >
+                  Re-lock
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold">
+                    {allSaved ? "Already submitted" : "Some scores already submitted"}
+                  </div>
+                  <p className="mt-0.5 text-xs">
+                    Unlock the form to edit and overwrite the prior value.
+                  </p>
+                </div>
+                <button
+                  className="btn btn-secondary text-xs"
+                  onClick={() => setUnlocked(true)}
+                >
+                  Unlock to edit
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <p>Loading…</p>
         ) : (
@@ -364,6 +532,7 @@ function ScoreEditor({
                           onChange={(v) =>
                             setRaws((r) => ({ ...r, [sub.inputFields[0].id]: v }))
                           }
+                          disabled={isLocked}
                         />
                       </div>
                     ) : (
@@ -382,6 +551,7 @@ function ScoreEditor({
                             inputMode="decimal"
                             step="any"
                             value={raws[f.id] ?? ""}
+                            disabled={isLocked}
                             onChange={(e) =>
                               setRaws((r) => ({ ...r, [f.id]: e.target.value }))
                             }
@@ -396,6 +566,11 @@ function ScoreEditor({
           </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
+        {justSaved && (
+          <p className="rounded-md bg-green-50 px-3 py-2 text-sm font-medium text-green-800">
+            ✓ Saved
+          </p>
+        )}
         <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t border-slate-200 bg-white px-4 pt-3">
           {partialCount > 0 && completeCount === 0 && (
             <p className="text-xs text-amber-700">
@@ -404,17 +579,19 @@ function ScoreEditor({
           )}
           <div className="flex justify-end gap-2">
             <button className="btn btn-ghost" onClick={onClose}>
-              Cancel
+              {justSaved ? "Close" : "Cancel"}
             </button>
             <button
               className="btn btn-primary"
               onClick={save}
-              disabled={saving || completeCount === 0}
+              disabled={saving || completeCount === 0 || isLocked || justSaved}
             >
               {saving
                 ? "Saving…"
                 : completeCount === activity.subActivities.length
-                  ? "Save"
+                  ? hasAnySaved
+                    ? "Save changes"
+                    : "Save"
                   : `Save ${completeCount} of ${activity.subActivities.length}`}
             </button>
           </div>
