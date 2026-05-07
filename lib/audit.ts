@@ -36,17 +36,20 @@ export type AuditInput = {
 
 export async function audit(input: AuditInput): Promise<void> {
   let adminEmail: string | null = null;
+  let adminName: string | null = null;
   if (input.adminId) {
     const a = await prisma.admin.findUnique({
       where: { id: input.adminId },
-      select: { email: true },
+      select: { email: true, name: true },
     });
     adminEmail = a?.email ?? null;
+    adminName = a?.name ?? null;
   }
   await prisma.auditLog.create({
     data: {
       adminId: input.adminId ?? null,
       adminEmail,
+      adminName,
       action: input.action,
       entityType: input.entityType,
       entityId: input.entityId ?? null,

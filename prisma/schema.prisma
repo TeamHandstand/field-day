@@ -198,6 +198,7 @@ model AuditLog {
   adminId     String?
   admin       Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
   adminEmail  String?  // denormalized so the row survives admin deletion
+  adminName   String?  // denormalized; preferred over email when displaying
   action      String   // "create" | "update" | "delete" | "finalize" | "unlock" | "reorder" | "password_change" | ...
   entityType  String   // "event" | "team" | "activity" | "template" | "photo" | "roster" | "admin" | "score" | ...
   entityId    String?

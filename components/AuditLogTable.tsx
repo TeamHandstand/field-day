@@ -5,6 +5,7 @@ type AuditRow = {
   id: string;
   adminId: string | null;
   adminEmail: string | null;
+  adminName: string | null;
   action: string;
   entityType: string;
   entityId: string | null;
@@ -53,8 +54,8 @@ export function AuditLogTable({ eventId }: { eventId?: string }) {
   const adminOptions = Array.from(
     new Map(
       rows
-        .filter((r) => r.adminId && r.adminEmail)
-        .map((r) => [r.adminId!, r.adminEmail!]),
+        .filter((r) => r.adminId && (r.adminName || r.adminEmail))
+        .map((r) => [r.adminId!, (r.adminName ?? r.adminEmail)!]),
     ).entries(),
   );
   const typeOptions = Array.from(new Set(rows.map((r) => r.entityType))).sort();
@@ -70,9 +71,9 @@ export function AuditLogTable({ eventId }: { eventId?: string }) {
             onChange={(e) => setAdminFilter(e.target.value)}
           >
             <option value="">All admins</option>
-            {adminOptions.map(([id, email]) => (
+            {adminOptions.map(([id, label]) => (
               <option key={id} value={id}>
-                {email}
+                {label}
               </option>
             ))}
           </select>
@@ -115,7 +116,7 @@ export function AuditLogTable({ eventId }: { eventId?: string }) {
               <div className="flex-1 text-sm">
                 <div>{r.summary}</div>
                 <div className="text-xs text-slate-500">
-                  by {r.adminEmail ?? "unknown"}
+                  by {r.adminName ?? r.adminEmail ?? "unknown"}
                 </div>
               </div>
             </li>
