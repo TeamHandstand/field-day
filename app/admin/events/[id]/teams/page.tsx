@@ -8,18 +8,22 @@ type Team = {
   teamNumber: number;
   cohortNumber: number | null;
   photos: { id: string; s3Url: string }[];
-  rosterUsers: { id: string; name: string }[];
+  rosterUsers: { id: string; firstName: string; lastName: string }[];
 };
 
-type ParsedRow = {
+type ParsedRosterUser = { firstName: string; lastName: string };
+
+type ParsedTeam = {
   name: string;
   teamNumber: number;
   cohortNumber: number | null;
+  roster: ParsedRosterUser[];
 };
 
 type ParsedCsv = {
-  rows: ParsedRow[];
+  teams: ParsedTeam[];
   errors: string[];
+  rosterCount: number;
 };
 
 // Tolerant CSV parser: handles quoted fields with commas and escaped quotes.
@@ -53,47 +57,61 @@ function parseCsvLine(line: string): string[] {
   return out.map((s) => s.trim());
 }
 
-// Expects headers `name`, `teamNumber` (or `team_number`/`number`/`#`),
-// optional `cohort` / `cohortNumber`. Header row is required so column order
-// is unambiguous.
+// One row per roster member. Required headers: `teamNumber`, `teamName`,
+// `firstName`, `lastName`. Optional `cohort`. teamName + cohort must be
+// consistent across all rows that share a teamNumber. Rows with empty
+// firstName AND lastName create the team without adding a member, so admins
+// can spec out empty teams from the same upload.
 function parseCsv(text: string): ParsedCsv {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
-  if (lines.length === 0) return { rows: [], errors: ["File is empty"] };
+  if (lines.length === 0)
+    return { teams: [], errors: ["File is empty"], rosterCount: 0 };
 
   const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
-  const nameIdx = headers.findIndex((h) => h === "name" || h === "team" || h === "team name");
+  const teamNameIdx = headers.findIndex((h) =>
+    ["teamname", "team_name", "team name", "team"].includes(h),
+  );
   const numIdx = headers.findIndex((h) =>
     ["teamnumber", "team_number", "team #", "number", "#"].includes(h),
   );
   const cohortIdx = headers.findIndex((h) =>
     ["cohort", "cohortnumber", "cohort_number", "cohort #"].includes(h),
   );
+  const firstIdx = headers.findIndex((h) =>
+    ["firstname", "first_name", "first name", "first"].includes(h),
+  );
+  const lastIdx = headers.findIndex((h) =>
+    ["lastname", "last_name", "last name", "last"].includes(h),
+  );
 
-  if (nameIdx === -1 || numIdx === -1) {
+  if (teamNameIdx === -1 || numIdx === -1 || firstIdx === -1 || lastIdx === -1) {
     return {
-      rows: [],
+      teams: [],
       errors: [
-        'Header row must include "name" and "teamNumber" columns. "cohort" is optional.',
+        'Header row must include "teamNumber", "teamName", "firstName", and "lastName". "cohort" is optional.',
       ],
+      rosterCount: 0,
     };
   }
 
-  const rows: ParsedRow[] = [];
   const errors: string[] = [];
+  const grouped = new Map<number, ParsedTeam>();
+  let rosterCount = 0;
+
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i]);
-    const name = cells[nameIdx]?.trim();
+    const teamName = cells[teamNameIdx]?.trim();
     const numRaw = cells[numIdx]?.trim();
     const num = parseInt(numRaw ?? "", 10);
-    if (!name) {
-      errors.push(`Row ${i + 1}: missing name`);
-      continue;
-    }
     if (!Number.isFinite(num) || num < 1) {
       errors.push(`Row ${i + 1}: invalid team number "${numRaw}"`);
+      continue;
+    }
+    if (!teamName) {
+      errors.push(`Row ${i + 1}: missing team name`);
       continue;
     }
     let cohort: number | null = null;
@@ -108,9 +126,51 @@ function parseCsv(text: string): ParsedCsv {
         cohort = c;
       }
     }
-    rows.push({ name, teamNumber: num, cohortNumber: cohort });
+
+    const first = cells[firstIdx]?.trim() ?? "";
+    const last = cells[lastIdx]?.trim() ?? "";
+    if ((first && !last) || (!first && last)) {
+      errors.push(
+        `Row ${i + 1}: roster member needs both first and last name (got "${first}" / "${last}")`,
+      );
+      continue;
+    }
+
+    const existing = grouped.get(num);
+    if (existing) {
+      if (existing.name !== teamName) {
+        errors.push(
+          `Row ${i + 1}: team #${num} already named "${existing.name}", got "${teamName}"`,
+        );
+        continue;
+      }
+      if (existing.cohortNumber !== cohort) {
+        errors.push(
+          `Row ${i + 1}: team #${num} cohort mismatch (${existing.cohortNumber ?? "—"} vs ${cohort ?? "—"})`,
+        );
+        continue;
+      }
+      if (first && last) {
+        existing.roster.push({ firstName: first, lastName: last });
+        rosterCount++;
+      }
+    } else {
+      const team: ParsedTeam = {
+        name: teamName,
+        teamNumber: num,
+        cohortNumber: cohort,
+        roster: [],
+      };
+      if (first && last) {
+        team.roster.push({ firstName: first, lastName: last });
+        rosterCount++;
+      }
+      grouped.set(num, team);
+    }
   }
-  return { rows, errors };
+
+  const teams = Array.from(grouped.values()).sort((a, b) => a.teamNumber - b.teamNumber);
+  return { teams, errors, rosterCount };
 }
 
 export default function TeamsPage({ params }: { params: { id: string } }) {
@@ -180,14 +240,14 @@ export default function TeamsPage({ params }: { params: { id: string } }) {
   };
 
   const importCsv = async () => {
-    if (!csvPreview || csvPreview.rows.length === 0) return;
+    if (!csvPreview || csvPreview.teams.length === 0) return;
     setCsvImporting(true);
     setCsvImportError(null);
     try {
       const res = await fetch(`/api/events/${params.id}/teams`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teams: csvPreview.rows }),
+        body: JSON.stringify({ teams: csvPreview.teams }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -213,9 +273,12 @@ export default function TeamsPage({ params }: { params: { id: string } }) {
       <section className="card space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="font-semibold">Import from CSV</h2>
+            <h2 className="font-semibold">Import teams + roster from CSV</h2>
             <p className="text-xs text-slate-500">
-              Columns: <code>name</code>, <code>teamNumber</code>, optional <code>cohort</code>.
+              One row per roster member. Columns:{" "}
+              <code>teamNumber</code>, <code>teamName</code>, <code>firstName</code>,{" "}
+              <code>lastName</code>, optional <code>cohort</code>. Repeat the team
+              metadata for each member.
             </p>
           </div>
           <input
@@ -236,11 +299,19 @@ export default function TeamsPage({ params }: { params: { id: string } }) {
           <div className="space-y-2">
             <div className="text-sm text-slate-600">
               <span className="font-medium">{csvFileName}</span> —{" "}
-              <span>{csvPreview.rows.length} valid row{csvPreview.rows.length === 1 ? "" : "s"}</span>
+              <span>
+                {csvPreview.teams.length} team{csvPreview.teams.length === 1 ? "" : "s"}
+              </span>
+              <span>
+                {" "}
+                · {csvPreview.rosterCount} roster member
+                {csvPreview.rosterCount === 1 ? "" : "s"}
+              </span>
               {csvPreview.errors.length > 0 && (
                 <span className="text-red-600">
                   {" "}
-                  · {csvPreview.errors.length} skipped
+                  · {csvPreview.errors.length} skipped row
+                  {csvPreview.errors.length === 1 ? "" : "s"}
                 </span>
               )}
             </div>
@@ -251,22 +322,34 @@ export default function TeamsPage({ params }: { params: { id: string } }) {
                 ))}
               </ul>
             )}
-            {csvPreview.rows.length > 0 && (
-              <div className="max-h-48 overflow-y-auto rounded-md border border-slate-200">
+            {csvPreview.teams.length > 0 && (
+              <div className="max-h-64 overflow-y-auto rounded-md border border-slate-200">
                 <table className="min-w-full text-sm">
                   <thead className="bg-slate-50 text-xs text-slate-500">
                     <tr>
                       <th className="px-2 py-1 text-left">#</th>
-                      <th className="px-2 py-1 text-left">Name</th>
+                      <th className="px-2 py-1 text-left">Team</th>
                       <th className="px-2 py-1 text-left">Cohort</th>
+                      <th className="px-2 py-1 text-left">Roster</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {csvPreview.rows.map((r) => (
-                      <tr key={r.teamNumber} className="border-t border-slate-100">
-                        <td className="px-2 py-1">{r.teamNumber}</td>
-                        <td className="px-2 py-1">{r.name}</td>
-                        <td className="px-2 py-1 text-slate-500">{r.cohortNumber ?? "—"}</td>
+                    {csvPreview.teams.map((t) => (
+                      <tr key={t.teamNumber} className="border-t border-slate-100 align-top">
+                        <td className="px-2 py-1">{t.teamNumber}</td>
+                        <td className="px-2 py-1">{t.name}</td>
+                        <td className="px-2 py-1 text-slate-500">
+                          {t.cohortNumber ?? "—"}
+                        </td>
+                        <td className="px-2 py-1 text-xs text-slate-600">
+                          {t.roster.length === 0 ? (
+                            <span className="text-slate-400">No members</span>
+                          ) : (
+                            t.roster
+                              .map((r) => `${r.firstName} ${r.lastName}`)
+                              .join(", ")
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -283,11 +366,14 @@ export default function TeamsPage({ params }: { params: { id: string } }) {
               <button
                 className="btn btn-primary"
                 onClick={importCsv}
-                disabled={csvImporting || csvPreview.rows.length === 0}
+                disabled={csvImporting || csvPreview.teams.length === 0}
               >
                 {csvImporting
                   ? "Importing…"
-                  : `Import ${csvPreview.rows.length} team${csvPreview.rows.length === 1 ? "" : "s"}`}
+                  : `Import ${csvPreview.teams.length} team${csvPreview.teams.length === 1 ? "" : "s"}` +
+                    (csvPreview.rosterCount > 0
+                      ? ` + ${csvPreview.rosterCount} member${csvPreview.rosterCount === 1 ? "" : "s"}`
+                      : "")}
               </button>
             </div>
           </div>

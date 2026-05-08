@@ -3,13 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { LeaderboardData } from "@/lib/leaderboard";
 
+type RosterUser = { id: string; firstName: string; lastName: string };
+
 type Team = {
   id: string;
   name: string;
   teamNumber: number;
   cohortNumber: number | null;
   photos: { id: string; s3Url: string; s3Key: string; displayOrder: number }[];
-  rosterUsers: { id: string; name: string }[];
+  rosterUsers: RosterUser[];
 };
 
 function ordinal(n: number): string {
@@ -29,7 +31,12 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
   const [name, setName] = useState("");
   const [number, setNumber] = useState<number>(1);
   const [cohort, setCohort] = useState<string>("");
-  const [rosterName, setRosterName] = useState("");
+  const [newFirst, setNewFirst] = useState("");
+  const [newLast, setNewLast] = useState("");
+  const [editingRosterId, setEditingRosterId] = useState<string | null>(null);
+  const [editFirst, setEditFirst] = useState("");
+  const [editLast, setEditLast] = useState("");
+  const [rosterError, setRosterError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -69,13 +76,61 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
 
   const addRoster = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!rosterName.trim()) return;
-    await fetch(`/api/teams/${params.tid}/roster`, {
+    setRosterError(null);
+    const f = newFirst.trim();
+    const l = newLast.trim();
+    if (!f || !l) {
+      setRosterError("First and last name are both required.");
+      return;
+    }
+    const res = await fetch(`/api/teams/${params.tid}/roster`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: rosterName.trim() }),
+      body: JSON.stringify({ firstName: f, lastName: l }),
     });
-    setRosterName("");
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setRosterError(data.error ?? "Add failed");
+      return;
+    }
+    setNewFirst("");
+    setNewLast("");
+    load();
+  };
+
+  const startEditRoster = (u: RosterUser) => {
+    setEditingRosterId(u.id);
+    setEditFirst(u.firstName);
+    setEditLast(u.lastName);
+    setRosterError(null);
+  };
+
+  const cancelEditRoster = () => {
+    setEditingRosterId(null);
+    setEditFirst("");
+    setEditLast("");
+    setRosterError(null);
+  };
+
+  const saveEditRoster = async () => {
+    setRosterError(null);
+    const f = editFirst.trim();
+    const l = editLast.trim();
+    if (!f || !l) {
+      setRosterError("First and last name are both required.");
+      return;
+    }
+    const res = await fetch(`/api/roster/${editingRosterId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ firstName: f, lastName: l }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setRosterError(data.error ?? "Save failed");
+      return;
+    }
+    cancelEditRoster();
     load();
   };
 
@@ -405,22 +460,71 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
 
       <section className="card space-y-3">
         <h2 className="font-semibold">Roster</h2>
-        <form onSubmit={addRoster} className="flex gap-2">
+        <form onSubmit={addRoster} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
           <input
             className="input"
-            placeholder="Player name"
-            value={rosterName}
-            onChange={(e) => setRosterName(e.target.value)}
+            placeholder="First name"
+            value={newFirst}
+            onChange={(e) => setNewFirst(e.target.value)}
+          />
+          <input
+            className="input"
+            placeholder="Last name"
+            value={newLast}
+            onChange={(e) => setNewLast(e.target.value)}
           />
           <button className="btn btn-primary">Add</button>
         </form>
+        {rosterError && <p className="text-sm text-red-600">{rosterError}</p>}
         <ul className="divide-y divide-slate-200">
           {team.rosterUsers.map((u) => (
-            <li key={u.id} className="flex items-center justify-between py-2">
-              <span>{u.name}</span>
-              <button onClick={() => removeRoster(u.id)} className="text-sm text-red-600">
-                Remove
-              </button>
+            <li key={u.id} className="flex items-center justify-between gap-2 py-2">
+              {editingRosterId === u.id ? (
+                <>
+                  <div className="flex flex-1 gap-2">
+                    <input
+                      className="input"
+                      placeholder="First name"
+                      value={editFirst}
+                      onChange={(e) => setEditFirst(e.target.value)}
+                    />
+                    <input
+                      className="input"
+                      placeholder="Last name"
+                      value={editLast}
+                      onChange={(e) => setEditLast(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={saveEditRoster} className="btn btn-primary text-sm">
+                      Save
+                    </button>
+                    <button onClick={cancelEditRoster} className="btn btn-ghost text-sm">
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {u.firstName} {u.lastName}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => startEditRoster(u)}
+                      className="text-sm text-slate-600 hover:text-brand"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => removeRoster(u.id)}
+                      className="text-sm text-red-600"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </>
+              )}
             </li>
           ))}
           {team.rosterUsers.length === 0 && <p className="text-slate-500">No roster yet.</p>}

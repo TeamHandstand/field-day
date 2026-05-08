@@ -32,6 +32,15 @@ const csvSchema = z.object({
         name: z.string().min(1).max(120),
         teamNumber: z.number().int().min(1),
         cohortNumber: z.number().int().min(1).nullable().optional(),
+        roster: z
+          .array(
+            z.object({
+              firstName: z.string().trim().min(1).max(80),
+              lastName: z.string().trim().min(1).max(80),
+            }),
+          )
+          .max(50)
+          .optional(),
       }),
     )
     .min(1)
@@ -85,17 +94,32 @@ export async function POST(req: Request, { params }: { params: { id: string } })
             name: t.name,
             teamNumber: t.teamNumber,
             cohortNumber: t.cohortNumber ?? null,
+            rosterUsers: t.roster && t.roster.length > 0
+              ? {
+                  create: t.roster.map((r) => ({
+                    firstName: r.firstName,
+                    lastName: r.lastName,
+                  })),
+                }
+              : undefined,
           },
         }),
       ),
+    );
+    const totalRoster = parsed.data.teams.reduce(
+      (acc, t) => acc + (t.roster?.length ?? 0),
+      0,
     );
     await audit({
       adminId: auth.adminId,
       action: "create_batch",
       entityType: "team",
       eventId: params.id,
-      summary: `Imported ${created.length} team${created.length === 1 ? "" : "s"} from CSV`,
-      details: { count: created.length, source: "csv" },
+      summary:
+        totalRoster > 0
+          ? `Imported ${created.length} team${created.length === 1 ? "" : "s"} (+${totalRoster} roster) from CSV`
+          : `Imported ${created.length} team${created.length === 1 ? "" : "s"} from CSV`,
+      details: { count: created.length, rosterCount: totalRoster, source: "csv" },
     });
     await publishEvent({ type: "team_changed", eventId: params.id, ts: Date.now() });
     return NextResponse.json({ teams: created });
