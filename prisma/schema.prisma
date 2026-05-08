@@ -76,10 +76,11 @@ model TeamPhoto {
 }
 
 model RosterUser {
-  id     String @id @default(cuid())
-  teamId String
-  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  name   String
+  id        String @id @default(cuid())
+  teamId    String
+  team      Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  firstName String
+  lastName  String
 
   @@index([teamId])
 }
