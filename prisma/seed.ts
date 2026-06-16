@@ -23,11 +23,10 @@ async function seedAdmin() {
 }
 
 async function seedTemplates() {
-  const existing = await prisma.activityTemplate.count({ where: { isSystemSeeded: true } });
-  if (existing > 0) {
-    console.log("System-seeded templates already present, skipping.");
-    return;
-  }
+  // Refresh the system-seeded templates on every run so NEW events always copy the
+  // latest structure. Deleting a template sets Activity.templateId to NULL (SET NULL),
+  // so events already created keep their own copied activities untouched.
+  await prisma.activityTemplate.deleteMany({ where: { isSystemSeeded: true } });
 
   await prisma.activityTemplate.create({
     data: {
@@ -87,7 +86,7 @@ async function seedTemplates() {
             inputRule: "single_value",
             sortDirection: "desc",
             inputFields: {
-              create: [{ label: "Weight", unit: "grams", displayOrder: 0 }],
+              create: [{ label: "Weight", unit: "pounds", displayOrder: 0 }],
             },
           },
         ],
@@ -99,7 +98,7 @@ async function seedTemplates() {
     data: {
       name: "Gut Check",
       description:
-        "Composite challenge: Point North, Timer Test, Weight Test, Measurement Test. Lowest summed rank wins.",
+        "Composite challenge: Point North, Timer Test, Weight Test, Banana Split, Measurement Test. Lowest summed rank wins.",
       aggregationRule: "sum_of_ranks",
       isSystemSeeded: true,
       subActivities: {
@@ -107,10 +106,14 @@ async function seedTemplates() {
           {
             name: "Point North",
             displayOrder: 0,
-            inputRule: "single_value",
+            // Compass bearing (0–360°); scored as the offset from North, wrapping
+            // around 360 (350° counts as 10° off). Target defaults to 0 (North).
+            inputRule: "circular_deviation",
             sortDirection: "asc",
             inputFields: {
-              create: [{ label: "Degrees off North", unit: "degrees", displayOrder: 0 }],
+              create: [
+                { label: "Bearing", unit: "degrees", defaultTargetValue: 0, displayOrder: 0 },
+              ],
             },
           },
           {
@@ -140,16 +143,28 @@ async function seedTemplates() {
             },
           },
           {
-            name: "Measurement Test",
+            name: "Banana Split",
             displayOrder: 3,
-            inputRule: "sum_of_pct_deviation",
+            // Cut a banana in half and weigh each half — the closer the two weights,
+            // the better. Score is the absolute difference between them.
+            inputRule: "abs_difference",
             sortDirection: "asc",
             inputFields: {
               create: [
-                { label: "Attempt 1", unit: "cm", displayOrder: 0 },
-                { label: "Attempt 2", unit: "cm", displayOrder: 1 },
-                { label: "Attempt 3", unit: "cm", displayOrder: 2 },
+                { label: "Half A", unit: "grams", displayOrder: 0 },
+                { label: "Half B", unit: "grams", displayOrder: 1 },
               ],
+            },
+          },
+          {
+            name: "Measurement Test",
+            displayOrder: 4,
+            // One measurement scored by how far it lands from a target; closest wins.
+            // Target must be set per event before scores can be logged.
+            inputRule: "abs_deviation_from_target",
+            sortDirection: "asc",
+            inputFields: {
+              create: [{ label: "Measurement", unit: "cm", displayOrder: 0 }],
             },
           },
         ],
@@ -157,7 +172,7 @@ async function seedTemplates() {
     },
   });
 
-  console.log("Seeded 4 system activity templates.");
+  console.log("Seeded system activity templates.");
 }
 
 async function main() {

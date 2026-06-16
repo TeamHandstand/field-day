@@ -3,7 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { explainActivity } from "@/lib/explain";
 import { TimeInput, shouldUseTimeInput } from "@/components/TimeInput";
-import { rankActivity, type ActivityShape, type SubActivityScore } from "@/lib/scoring";
+import {
+  rankActivityLive,
+  ruleRequiresTarget,
+  type ActivityShape,
+  type SubActivityScore,
+} from "@/lib/scoring";
+import { formatMeasure } from "@/lib/format";
+import { useEventChannel } from "@/lib/pubnub-client";
 
 type SubActivity = {
   id: string;
@@ -62,7 +69,13 @@ function fmtRecordedValue(value: number, sub: SubActivity): string {
     return `${sign}${mins}:${secsStr}`;
   }
   const unit = sub.inputFields[0]?.unit;
-  return unit ? `${fmtNumber(value)} ${unit}` : fmtNumber(value);
+  return unit ? `${formatMeasure(value, unit)} ${unit}` : fmtNumber(value);
+}
+
+// Sub-activities whose scoring needs a target the host hasn't set yet. Scores
+// can't be computed for these until targets are configured for the event.
+function subMissingTarget(sub: SubActivity): boolean {
+  return ruleRequiresTarget(sub.inputRule) && sub.inputFields.some((f) => f.targetValue == null);
 }
 
 export default function ScoreLogPage({ params }: { params: { id: string; aid: string } }) {
@@ -118,6 +131,9 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
     load();
   }, [load]);
 
+  // Live sync: refresh as other hosts log scores so the list and ranks stay current.
+  useEventChannel(params.id, () => load());
+
   const cohorts = useMemo(
     () =>
       Array.from(
@@ -160,13 +176,14 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
         inputFields: s.inputFields.map((f) => ({ id: f.id, targetValue: f.targetValue })),
       })),
     };
-    const r = rankActivity(shape, cohortScores, visibleTeams.map((t) => t.id));
+    const r = rankActivityLive(shape, cohortScores, visibleTeams.map((t) => t.id));
     return r.ranks;
   }, [activity, visibleTeams, scores]);
 
   if (!activity) return <p>Loading…</p>;
 
   const totalSubs = activity.subActivities.length;
+  const missingTargetSubs = activity.subActivities.filter(subMissingTarget);
 
   const sortedTeams = [...visibleTeams].sort((a, b) => {
     if (sortBy === "rank") {
@@ -217,6 +234,23 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
           >
             ×
           </button>
+        </div>
+      )}
+
+      {missingTargetSubs.length > 0 && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <div className="font-semibold">Targets needed before logging</div>
+          <p className="mt-0.5 text-xs">
+            Set a target for{" "}
+            {missingTargetSubs.map((s) => s.name).join(", ")} before you can record those
+            scores.{" "}
+            <Link
+              href={`/admin/events/${params.id}/activities`}
+              className="font-medium underline"
+            >
+              Configure targets →
+            </Link>
+          </p>
         </div>
       )}
 
@@ -452,7 +486,9 @@ function ScoreEditor({
     sub: s,
     status: evaluateSub(s, raws, savedSubIds),
   }));
-  const completeCount = subStatuses.filter((x) => x.status === "complete").length;
+  const completeCount = subStatuses.filter(
+    (x) => x.status === "complete" && !subMissingTarget(x.sub),
+  ).length;
   const partialCount = subStatuses.filter((x) => x.status === "partial").length;
 
   const hasAnySaved = savedSubIds.size > 0;
@@ -464,7 +500,7 @@ function ScoreEditor({
     setError(null);
     try {
       const subEntries = activity.subActivities
-        .filter((s) => evaluateSub(s, raws, savedSubIds) === "complete")
+        .filter((s) => !subMissingTarget(s) && evaluateSub(s, raws, savedSubIds) === "complete")
         .map((s) => {
           const r: Record<string, number> = {};
           for (const f of s.inputFields) r[f.id] = parseFloat(raws[f.id]);
@@ -561,6 +597,18 @@ function ScoreEditor({
           <div className="space-y-3">
             {subStatuses.map(({ sub, status }) => {
               const useTime = sub.inputFields.length === 1 && shouldUseTimeInput(sub.inputRule, sub.inputFields[0].unit);
+              const blocked = subMissingTarget(sub);
+              if (blocked) {
+                return (
+                  <div key={sub.id} className="rounded-md border border-red-200 bg-red-50 p-3">
+                    <div className="font-medium">{sub.name}</div>
+                    <p className="mt-1 text-xs text-red-700">
+                      Set a target for this sub-activity before logging. Open the activity&apos;s
+                      configuration to add one.
+                    </p>
+                  </div>
+                );
+              }
               return (
                 <div key={sub.id} className="rounded-md border border-slate-200 p-3">
                   <div className="flex items-center justify-between">

@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { canDeleteEvent } from "@/lib/permissions";
 
 type EventDetail = {
   id: string;
@@ -22,6 +24,8 @@ type Gap = {
 
 export default function EventDashboard({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { data: session } = useSession();
+  const canDelete = canDeleteEvent(session?.user?.email);
   const [data, setData] = useState<EventDetail | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState("");
@@ -207,9 +211,11 @@ export default function EventDashboard({ params }: { params: { id: string } }) {
             </div>
           </div>
         )}
-        <button className="btn btn-danger" onClick={remove}>
-          Delete event
-        </button>
+        {canDelete && (
+          <button className="btn btn-danger" onClick={remove}>
+            Delete event
+          </button>
+        )}
       </section>
 
       {showFinalize && (
