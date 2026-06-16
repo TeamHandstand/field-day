@@ -5,6 +5,8 @@ export const inputRule = z.enum([
   "single_value",
   "sum_of_pct_deviation",
   "abs_deviation_from_target",
+  "circular_deviation",
+  "abs_difference",
 ]);
 export const sortDirection = z.enum(["asc", "desc"]);
 

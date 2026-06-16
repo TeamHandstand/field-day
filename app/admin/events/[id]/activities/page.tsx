@@ -12,6 +12,7 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { explainActivity } from "@/lib/explain";
+import { ruleRequiresTarget } from "@/lib/scoring";
 
 type Template = {
   id: string;
@@ -57,7 +58,7 @@ function ActivityRow({
   };
 
   const missingTargets = activity.subActivities.flatMap((s) =>
-    s.inputRule === "sum_of_pct_deviation" || s.inputRule === "abs_deviation_from_target"
+    ruleRequiresTarget(s.inputRule)
       ? s.inputFields.filter((f) => f.targetValue == null).map((f) => `${s.name}: ${f.label}`)
       : [],
   );
@@ -287,10 +288,8 @@ function ActivityEditor({ activity, onClose }: { activity: EventActivity; onClos
                   className="input"
                   type="number"
                   step="any"
-                  placeholder={
-                    f.inputRule === "single_value" ? "n/a" : "Target"
-                  }
-                  disabled={f.inputRule === "single_value"}
+                  placeholder={ruleRequiresTarget(f.inputRule) ? "Target" : "n/a"}
+                  disabled={!ruleRequiresTarget(f.inputRule)}
                   value={f.targetValue ?? ""}
                   onChange={(e) =>
                     setFields((arr) =>

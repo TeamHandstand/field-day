@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
 import { audit } from "@/lib/audit";
+import { canDeleteEvent } from "@/lib/permissions";
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const event = await prisma.event.findUnique({
@@ -55,6 +56,14 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const auth = await requireAdmin();
   if (!auth.ok) return auth.response;
+  // Deleting an event is gated to specific admins (see lib/permissions).
+  const admin = await prisma.admin.findUnique({ where: { id: auth.adminId } });
+  if (!canDeleteEvent(admin?.email)) {
+    return NextResponse.json(
+      { error: "You don't have permission to delete events." },
+      { status: 403 },
+    );
+  }
   const existing = await prisma.event.findUnique({ where: { id: params.id } });
   if (!existing) return notFound();
   await prisma.event.delete({ where: { id: params.id } });
