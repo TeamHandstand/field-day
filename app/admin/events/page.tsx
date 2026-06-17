@@ -15,6 +15,9 @@ export default function EventsPage() {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
+  // Which event's "⋯" menu is open (Scoring / Audit live here now, not in the
+  // per-event nav bar).
+  const [menuFor, setMenuFor] = useState<string | null>(null);
 
   const load = async () => {
     const r = await fetch("/api/events");
@@ -80,9 +83,50 @@ export default function EventsPage() {
                 )}
               </div>
             </div>
-            <Link href={`/admin/events/${ev.id}`} className="btn btn-secondary">
-              Open
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link href={`/admin/events/${ev.id}`} className="btn btn-secondary">
+                Open
+              </Link>
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="More actions"
+                  aria-haspopup="menu"
+                  aria-expanded={menuFor === ev.id}
+                  className="btn btn-secondary px-2.5 text-lg leading-none"
+                  onClick={() => setMenuFor(menuFor === ev.id ? null : ev.id)}
+                >
+                  ⋯
+                </button>
+                {menuFor === ev.id && (
+                  <>
+                    {/* Click-away layer */}
+                    <div className="fixed inset-0 z-10" onClick={() => setMenuFor(null)} />
+                    <div
+                      role="menu"
+                      className="absolute right-0 z-20 mt-1 w-40 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg"
+                    >
+                      <Link
+                        href={`/admin/events/${ev.id}/activities`}
+                        role="menuitem"
+                        className="block px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        onClick={() => setMenuFor(null)}
+                      >
+                        Scoring
+                      </Link>
+                      <Link
+                        href={`/admin/events/${ev.id}/audit`}
+                        role="menuitem"
+                        className="block px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        onClick={() => setMenuFor(null)}
+                      >
+                        Audit
+                      </Link>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           </li>
         ))}
         {events.length === 0 && <p className="text-slate-500">No events yet.</p>}

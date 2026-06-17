@@ -14,9 +14,9 @@ export function AdminNav() {
 
   const links = eventId
     ? [
+        // Audit and Scoring intentionally live behind the per-event "⋯" menu on
+        // the Events list rather than cluttering the event nav bar.
         { href: `/admin/events/${eventId}/teams`, label: "Teams" },
-        { href: `/admin/events/${eventId}/audit`, label: "Audit" },
-        { href: `/admin/events/${eventId}/activities`, label: "Scoring" },
         { href: `/admin/events/${eventId}/leaderboard`, label: "Leaderboard" },
       ]
     : [
