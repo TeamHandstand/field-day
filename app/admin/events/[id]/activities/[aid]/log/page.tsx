@@ -38,6 +38,7 @@ type Team = {
 type ScoreEntry = {
   subActivityId: string;
   computedValue: number;
+  inputs: { inputFieldId: string; rawValue: number }[];
 };
 
 type SortMode = "number" | "rank";
@@ -53,11 +54,17 @@ function fmtNumber(n: number): string {
   return n.toFixed(2);
 }
 
-// Format a sub-activity's recorded value for the team list. Times measured in
+// Format a sub-activity's recorded value for the team list. We show the value(s)
+// the host actually entered — not the derived score — so a 30.42s timer reads
+// "30.42 seconds", not the "0.42" deviation from its target. Times measured in
 // seconds get shown as m:ss so the host doesn't have to do the math; everything
 // else just gets its unit appended.
-function fmtRecordedValue(value: number, sub: SubActivity): string {
-  if (shouldUseTimeInput(sub.inputRule, sub.inputFields[0]?.unit ?? "")) {
+function fmtRecordedValue(entry: ScoreEntry, sub: SubActivity): string {
+  const rawByField = new Map(entry.inputs.map((i) => [i.inputFieldId, i.rawValue]));
+  const firstUnit = sub.inputFields[0]?.unit ?? "";
+
+  if (shouldUseTimeInput(sub.inputRule, firstUnit)) {
+    const value = rawByField.get(sub.inputFields[0].id) ?? entry.computedValue;
     const total = Math.abs(value);
     const sign = value < 0 ? "-" : "";
     const mins = Math.floor(total / 60);
@@ -68,8 +75,26 @@ function fmtRecordedValue(value: number, sub: SubActivity): string {
     );
     return `${sign}${mins}:${secsStr}`;
   }
-  const unit = sub.inputFields[0]?.unit;
-  return unit ? `${formatMeasure(value, unit)} ${unit}` : fmtNumber(value);
+
+  const fields = sub.inputFields.filter((f) => rawByField.has(f.id));
+  // Older entries may predate stored raw inputs; fall back to the computed value.
+  if (fields.length === 0) {
+    return firstUnit
+      ? `${formatMeasure(entry.computedValue, firstUnit)} ${firstUnit}`
+      : fmtNumber(entry.computedValue);
+  }
+  // Multiple attempts sharing a unit read best as "30.42 / 61 / 90 seconds".
+  if (fields.every((f) => f.unit === firstUnit)) {
+    const nums = fields.map((f) => formatMeasure(rawByField.get(f.id)!, f.unit)).join(" / ");
+    return firstUnit ? `${nums} ${firstUnit}` : nums;
+  }
+  return fields
+    .map((f) =>
+      f.unit
+        ? `${formatMeasure(rawByField.get(f.id)!, f.unit)} ${f.unit}`
+        : fmtNumber(rawByField.get(f.id)!),
+    )
+    .join(" · ");
 }
 
 // Sub-activities whose scoring needs a target the host hasn't set yet. Scores
@@ -119,10 +144,15 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
       subActivityId: string;
       computedValue: number;
       activityId: string;
+      inputs: { inputFieldId: string; rawValue: number }[];
     }[]) {
       if (s.activityId !== params.aid) continue;
       if (!grouped[s.teamId]) grouped[s.teamId] = [];
-      grouped[s.teamId].push({ subActivityId: s.subActivityId, computedValue: s.computedValue });
+      grouped[s.teamId].push({
+        subActivityId: s.subActivityId,
+        computedValue: s.computedValue,
+        inputs: s.inputs ?? [],
+      });
     }
     setScores(grouped);
   }, [params.aid, params.id]);
@@ -327,7 +357,7 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
             return {
               subId: s.id,
               subName: s.name,
-              text: sc ? fmtRecordedValue(sc.computedValue, s) : null,
+              text: sc ? fmtRecordedValue(sc, s) : null,
             };
           });
           const hasAnyValue = valueParts.some((v) => v.text != null);
