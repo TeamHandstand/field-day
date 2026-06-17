@@ -9,7 +9,7 @@ import {
   type ActivityShape,
   type SubActivityScore,
 } from "@/lib/scoring";
-import { formatMeasure } from "@/lib/format";
+import { summarizeRecorded, deviationToneClass } from "@/lib/format";
 import { useEventChannel } from "@/lib/pubnub-client";
 
 type SubActivity = {
@@ -49,52 +49,13 @@ function ordinal(n: number): string {
   return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`;
 }
 
-function fmtNumber(n: number): string {
-  if (Number.isInteger(n)) return n.toString();
-  return n.toFixed(2);
-}
-
-// Format a sub-activity's recorded value for the team list. We show the value(s)
-// the host actually entered — not the derived score — so a 30.42s timer reads
-// "30.42 seconds", not the "0.42" deviation from its target. Times measured in
-// seconds get shown as m:ss so the host doesn't have to do the math; everything
-// else just gets its unit appended.
-function fmtRecordedValue(entry: ScoreEntry, sub: SubActivity): string {
+// Summarize a sub-activity's logged result for the team list. Deviation-based
+// sub-activities (Gut Check's Timer/Weight tests, etc.) show the signed gap from
+// target, tone-coded; plain values show what the host recorded. See
+// summarizeRecorded for the full rule breakdown.
+function fmtRecordedValue(entry: ScoreEntry, sub: SubActivity) {
   const rawByField = new Map(entry.inputs.map((i) => [i.inputFieldId, i.rawValue]));
-  const firstUnit = sub.inputFields[0]?.unit ?? "";
-
-  if (shouldUseTimeInput(sub.inputRule, firstUnit)) {
-    const value = rawByField.get(sub.inputFields[0].id) ?? entry.computedValue;
-    const total = Math.abs(value);
-    const sign = value < 0 ? "-" : "";
-    const mins = Math.floor(total / 60);
-    const secs = total - mins * 60;
-    const secsStr = (Number.isInteger(secs) ? secs.toString() : secs.toFixed(2)).padStart(
-      Number.isInteger(secs) ? 2 : 5,
-      "0",
-    );
-    return `${sign}${mins}:${secsStr}`;
-  }
-
-  const fields = sub.inputFields.filter((f) => rawByField.has(f.id));
-  // Older entries may predate stored raw inputs; fall back to the computed value.
-  if (fields.length === 0) {
-    return firstUnit
-      ? `${formatMeasure(entry.computedValue, firstUnit)} ${firstUnit}`
-      : fmtNumber(entry.computedValue);
-  }
-  // Multiple attempts sharing a unit read best as "30.42 / 61 / 90 seconds".
-  if (fields.every((f) => f.unit === firstUnit)) {
-    const nums = fields.map((f) => formatMeasure(rawByField.get(f.id)!, f.unit)).join(" / ");
-    return firstUnit ? `${nums} ${firstUnit}` : nums;
-  }
-  return fields
-    .map((f) =>
-      f.unit
-        ? `${formatMeasure(rawByField.get(f.id)!, f.unit)} ${f.unit}`
-        : fmtNumber(rawByField.get(f.id)!),
-    )
-    .join(" · ");
+  return summarizeRecorded(sub.inputRule, sub.inputFields, rawByField, entry.computedValue);
 }
 
 // Sub-activities whose scoring needs a target the host hasn't set yet. Scores
@@ -354,10 +315,12 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
           const rank = ranks.get(t.id);
           const valueParts = activity.subActivities.map((s) => {
             const sc = teamScores.find((x) => x.subActivityId === s.id);
+            const summary = sc ? fmtRecordedValue(sc, s) : null;
             return {
               subId: s.id,
               subName: s.name,
-              text: sc ? fmtRecordedValue(sc, s) : null,
+              text: summary?.text ?? null,
+              tone: summary?.tone ?? "none",
             };
           });
           const hasAnyValue = valueParts.some((v) => v.text != null);
@@ -393,14 +356,22 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
                       {t.cohortNumber && <span>Cohort {t.cohortNumber}</span>}
                       {hasAnyValue ? (
                         totalSubs === 1 ? (
-                          <span className="font-medium text-slate-700">
+                          <span
+                            className={`font-medium ${
+                              valueParts[0].text ? deviationToneClass(valueParts[0].tone) : "text-slate-700"
+                            }`}
+                          >
                             {valueParts[0].text ?? "—"}
                           </span>
                         ) : (
                           valueParts.map((v) => (
                             <span key={v.subId} className="text-slate-600">
                               <span className="text-slate-400">{v.subName}:</span>{" "}
-                              <span className="font-medium text-slate-700">
+                              <span
+                                className={`font-medium ${
+                                  v.text ? deviationToneClass(v.tone) : "text-slate-700"
+                                }`}
+                              >
                                 {v.text ?? "—"}
                               </span>
                             </span>

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { LeaderboardData } from "@/lib/leaderboard";
-import { formatMeasure } from "@/lib/format";
+import { summarizeRecorded, deviationToneClass } from "@/lib/format";
 
 type RosterUser = { id: string; firstName: string; lastName: string };
 
@@ -21,38 +21,6 @@ function ordinal(n: number): string {
   return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`;
 }
 
-function fmt(n: number): string {
-  if (Number.isInteger(n)) return n.toString();
-  return n.toFixed(2);
-}
-
-type SubInputField = LeaderboardData["activities"][number]["subActivities"][number]["inputFields"][number];
-
-// Show the value(s) the host recorded for a sub-activity, with units. Falls back
-// to the computed score when raw inputs aren't available (older entries).
-function fmtRecorded(
-  inputs: { inputFieldId: string; rawValue: number }[],
-  fields: SubInputField[],
-  computed: number | null,
-): string {
-  const rawByField = new Map(inputs.map((i) => [i.inputFieldId, i.rawValue]));
-  const present = fields.filter((f) => rawByField.has(f.id));
-  if (present.length === 0) {
-    const unit = fields[0]?.unit;
-    if (computed == null) return "—";
-    return unit ? `${fmt(computed)} ${unit}` : fmt(computed);
-  }
-  const firstUnit = present[0].unit;
-  if (present.every((f) => f.unit === firstUnit)) {
-    const nums = present.map((f) => formatMeasure(rawByField.get(f.id)!, f.unit)).join(" / ");
-    return firstUnit ? `${nums} ${firstUnit}` : nums;
-  }
-  return present
-    .map((f) =>
-      f.unit ? `${formatMeasure(rawByField.get(f.id)!, f.unit)} ${f.unit}` : fmt(rawByField.get(f.id)!),
-    )
-    .join(" · ");
-}
 
 export default function TeamDetail({ params }: { params: { id: string; tid: string } }) {
   const [team, setTeam] = useState<Team | null>(null);
@@ -340,19 +308,32 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
                   </div>
                   <table className="mt-2 w-full text-sm">
                     <tbody>
-                      {row.subs.map(({ sub, computed, inputs, rank }) => (
+                      {row.subs.map(({ sub, computed, inputs, rank }) => {
+                        const summary =
+                          computed != null
+                            ? summarizeRecorded(
+                                sub.inputRule,
+                                sub.inputFields,
+                                new Map(inputs.map((i) => [i.inputFieldId, i.rawValue])),
+                                computed,
+                              )
+                            : null;
+                        return (
                         <tr key={sub.id} className="border-t border-slate-100">
                           <td className="py-1 pr-2 text-slate-600">{sub.name}</td>
-                          <td className="py-1 pr-2 text-right font-medium">
-                            {computed != null
-                              ? fmtRecorded(inputs, sub.inputFields, computed)
-                              : "—"}
+                          <td
+                            className={`py-1 pr-2 text-right font-medium ${
+                              summary ? deviationToneClass(summary.tone) : ""
+                            }`}
+                          >
+                            {summary ? summary.text : "—"}
                           </td>
                           <td className="w-16 py-1 text-right text-xs text-slate-500">
                             {rank != null ? ordinal(Math.round(rank)) : "—"}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </li>
