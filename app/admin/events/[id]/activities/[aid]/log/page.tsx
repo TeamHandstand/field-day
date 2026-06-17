@@ -9,7 +9,7 @@ import {
   type ActivityShape,
   type SubActivityScore,
 } from "@/lib/scoring";
-import { formatMeasure } from "@/lib/format";
+import { summarizeRecorded, deviationToneClass } from "@/lib/format";
 import { useEventChannel } from "@/lib/pubnub-client";
 
 type SubActivity = {
@@ -38,6 +38,7 @@ type Team = {
 type ScoreEntry = {
   subActivityId: string;
   computedValue: number;
+  inputs: { inputFieldId: string; rawValue: number }[];
 };
 
 type SortMode = "number" | "rank";
@@ -48,28 +49,13 @@ function ordinal(n: number): string {
   return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`;
 }
 
-function fmtNumber(n: number): string {
-  if (Number.isInteger(n)) return n.toString();
-  return n.toFixed(2);
-}
-
-// Format a sub-activity's recorded value for the team list. Times measured in
-// seconds get shown as m:ss so the host doesn't have to do the math; everything
-// else just gets its unit appended.
-function fmtRecordedValue(value: number, sub: SubActivity): string {
-  if (shouldUseTimeInput(sub.inputRule, sub.inputFields[0]?.unit ?? "")) {
-    const total = Math.abs(value);
-    const sign = value < 0 ? "-" : "";
-    const mins = Math.floor(total / 60);
-    const secs = total - mins * 60;
-    const secsStr = (Number.isInteger(secs) ? secs.toString() : secs.toFixed(2)).padStart(
-      Number.isInteger(secs) ? 2 : 5,
-      "0",
-    );
-    return `${sign}${mins}:${secsStr}`;
-  }
-  const unit = sub.inputFields[0]?.unit;
-  return unit ? `${formatMeasure(value, unit)} ${unit}` : fmtNumber(value);
+// Summarize a sub-activity's logged result for the team list. Deviation-based
+// sub-activities (Gut Check's Timer/Weight tests, etc.) show the signed gap from
+// target, tone-coded; plain values show what the host recorded. See
+// summarizeRecorded for the full rule breakdown.
+function fmtRecordedValue(entry: ScoreEntry, sub: SubActivity) {
+  const rawByField = new Map(entry.inputs.map((i) => [i.inputFieldId, i.rawValue]));
+  return summarizeRecorded(sub.inputRule, sub.inputFields, rawByField, entry.computedValue);
 }
 
 // Sub-activities whose scoring needs a target the host hasn't set yet. Scores
@@ -119,10 +105,15 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
       subActivityId: string;
       computedValue: number;
       activityId: string;
+      inputs: { inputFieldId: string; rawValue: number }[];
     }[]) {
       if (s.activityId !== params.aid) continue;
       if (!grouped[s.teamId]) grouped[s.teamId] = [];
-      grouped[s.teamId].push({ subActivityId: s.subActivityId, computedValue: s.computedValue });
+      grouped[s.teamId].push({
+        subActivityId: s.subActivityId,
+        computedValue: s.computedValue,
+        inputs: s.inputs ?? [],
+      });
     }
     setScores(grouped);
   }, [params.aid, params.id]);
@@ -324,10 +315,12 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
           const rank = ranks.get(t.id);
           const valueParts = activity.subActivities.map((s) => {
             const sc = teamScores.find((x) => x.subActivityId === s.id);
+            const summary = sc ? fmtRecordedValue(sc, s) : null;
             return {
               subId: s.id,
               subName: s.name,
-              text: sc ? fmtRecordedValue(sc.computedValue, s) : null,
+              text: summary?.text ?? null,
+              tone: summary?.tone ?? "none",
             };
           });
           const hasAnyValue = valueParts.some((v) => v.text != null);
@@ -352,25 +345,33 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      `#${t.teamNumber}`
+                      `T${t.teamNumber}`
                     )}
                   </div>
                   <div className="min-w-0">
                     <div className="font-semibold">
-                      #{t.teamNumber} {t.name}
+                      T{t.teamNumber} {t.name}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
                       {t.cohortNumber && <span>Cohort {t.cohortNumber}</span>}
                       {hasAnyValue ? (
                         totalSubs === 1 ? (
-                          <span className="font-medium text-slate-700">
+                          <span
+                            className={`font-medium ${
+                              valueParts[0].text ? deviationToneClass(valueParts[0].tone) : "text-slate-700"
+                            }`}
+                          >
                             {valueParts[0].text ?? "—"}
                           </span>
                         ) : (
                           valueParts.map((v) => (
                             <span key={v.subId} className="text-slate-600">
                               <span className="text-slate-400">{v.subName}:</span>{" "}
-                              <span className="font-medium text-slate-700">
+                              <span
+                                className={`font-medium ${
+                                  v.text ? deviationToneClass(v.tone) : "text-slate-700"
+                                }`}
+                              >
                                 {v.text ?? "—"}
                               </span>
                             </span>
@@ -523,7 +524,7 @@ function ScoreEditor({
       // toast and refresh data.
       setJustSaved(true);
       setTimeout(() => {
-        onSaved(`#${team.teamNumber} ${team.name}`);
+        onSaved(`T${team.teamNumber} ${team.name}`);
         onClose();
       }, 700);
     } catch (e) {
@@ -538,7 +539,7 @@ function ScoreEditor({
       <div className="card max-h-[90vh] w-full max-w-md space-y-3 overflow-y-auto">
         <div>
           <h3 className="text-lg font-semibold">
-            #{team.teamNumber} {team.name}
+            T{team.teamNumber} {team.name}
           </h3>
           <p className="text-sm text-slate-500">{activity.name}</p>
           {activity.subActivities.length > 1 && (

@@ -189,12 +189,12 @@ export function ActivityLeaderboard({ eventId, activityId, variant = "admin" }: 
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={t.photoUrl} alt="" className="h-full w-full object-cover" />
                         ) : (
-                          `#${t.teamNumber}`
+                          `T${t.teamNumber}`
                         )}
                       </div>
                       <div>
                         <div className="font-semibold">{t.name}</div>
-                        <div className="text-xs text-slate-500">#{t.teamNumber}</div>
+                        <div className="text-xs text-slate-500">T{t.teamNumber}</div>
                       </div>
                     </div>
                   </td>

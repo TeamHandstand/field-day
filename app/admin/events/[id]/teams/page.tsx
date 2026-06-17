@@ -443,12 +443,12 @@ export default function TeamsPage({ params }: { params: { id: string } }) {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={t.photos[0].s3Url} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  `#${t.teamNumber}`
+                  `T${t.teamNumber}`
                 )}
               </div>
               <div>
                 <div className="font-semibold">
-                  #{t.teamNumber} {t.name}
+                  T{t.teamNumber} {t.name}
                 </div>
                 <div className="text-xs text-slate-500">
                   {t.cohortNumber ? `Cohort ${t.cohortNumber} · ` : ""}

@@ -41,6 +41,9 @@ export type LeaderboardData = {
     activityId: string;
     subActivityId: string;
     computedValue: number;
+    // The raw value(s) the host entered, kept alongside the derived score so the
+    // UI can show what was actually recorded rather than the computed deviation.
+    inputs: { inputFieldId: string; rawValue: number }[];
   }[];
   // Live (pre-finalization) per-activity rank. Provisional: a team is ranked on
   // whatever sub-activities it has completed so far, so partial events still rank.
@@ -80,7 +83,7 @@ export async function loadLeaderboard(eventId: string): Promise<LeaderboardData 
             orderBy: { displayOrder: "asc" },
             include: {
               inputFields: { orderBy: { displayOrder: "asc" } },
-              scoreEntries: true,
+              scoreEntries: { include: { inputs: true } },
             },
           },
         },
@@ -129,6 +132,7 @@ export async function loadLeaderboard(eventId: string): Promise<LeaderboardData 
           activityId: a.id,
           subActivityId: s.id,
           computedValue: e.computedValue,
+          inputs: e.inputs.map((i) => ({ inputFieldId: i.inputFieldId, rawValue: i.rawValue })),
         });
       }
     }
