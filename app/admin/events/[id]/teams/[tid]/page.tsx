@@ -280,12 +280,12 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
             // eslint-disable-next-line @next/next/no-img-element
             <img src={team.photos[0].s3Url} alt="" className="h-full w-full object-cover" />
           ) : (
-            `#${team.teamNumber}`
+            `T${team.teamNumber}`
           )}
         </div>
         <div>
           <h1 className="text-2xl font-bold">
-            #{team.teamNumber} {team.name}
+            T{team.teamNumber} {team.name}
           </h1>
           <p className="text-sm text-slate-500">
             {team.cohortNumber ? `Cohort ${team.cohortNumber}` : "No cohort"}

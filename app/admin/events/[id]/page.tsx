@@ -235,7 +235,7 @@ export default function EventDashboard({ params }: { params: { id: string } }) {
                   {gaps.map((g) => (
                     <li key={g.teamId} className="rounded-md bg-amber-50 p-2">
                       <div className="font-medium">
-                        #{g.teamNumber} {g.teamName}
+                        T{g.teamNumber} {g.teamName}
                       </div>
                       <ul className="ml-4 list-disc text-xs text-slate-600">
                         {g.missing.map((m) => (

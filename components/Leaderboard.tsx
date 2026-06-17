@@ -196,7 +196,7 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={t.photoUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      `#${t.teamNumber}`
+                      `T${t.teamNumber}`
                     )}
                   </div>
                   <div>
@@ -206,7 +206,7 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                         variant === "public" ? "text-xs text-slate-400" : "text-xs text-slate-500"
                       }
                     >
-                      #{t.teamNumber}
+                      T{t.teamNumber}
                       {t.cohortNumber != null ? ` · Cohort ${t.cohortNumber}` : ""}
                     </div>
                   </div>

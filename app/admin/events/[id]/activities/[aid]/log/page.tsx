@@ -382,12 +382,12 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      `#${t.teamNumber}`
+                      `T${t.teamNumber}`
                     )}
                   </div>
                   <div className="min-w-0">
                     <div className="font-semibold">
-                      #{t.teamNumber} {t.name}
+                      T{t.teamNumber} {t.name}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
                       {t.cohortNumber && <span>Cohort {t.cohortNumber}</span>}
@@ -553,7 +553,7 @@ function ScoreEditor({
       // toast and refresh data.
       setJustSaved(true);
       setTimeout(() => {
-        onSaved(`#${team.teamNumber} ${team.name}`);
+        onSaved(`T${team.teamNumber} ${team.name}`);
         onClose();
       }, 700);
     } catch (e) {
@@ -568,7 +568,7 @@ function ScoreEditor({
       <div className="card max-h-[90vh] w-full max-w-md space-y-3 overflow-y-auto">
         <div>
           <h3 className="text-lg font-semibold">
-            #{team.teamNumber} {team.name}
+            T{team.teamNumber} {team.name}
           </h3>
           <p className="text-sm text-slate-500">{activity.name}</p>
           {activity.subActivities.length > 1 && (
