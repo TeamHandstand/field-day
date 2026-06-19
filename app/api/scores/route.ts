@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin, badRequest, notFound } from "@/lib/api";
-import { computeValue } from "@/lib/scoring";
+import { validateAndComputeSub, persistSubScore } from "@/lib/scoring-save";
 import { publishEvent } from "@/lib/pubnub-server";
 import { audit } from "@/lib/audit";
 
@@ -56,69 +56,35 @@ export async function POST(req: Request) {
       const sub = subById.get(entry.subActivityId);
       if (!sub) throw new Error("Sub-activity does not belong to activity");
 
-      // Validate every required input is present.
-      for (const f of sub.inputFields) {
-        if (typeof entry.raws[f.id] !== "number") {
-          throw new Error(`Missing input ${f.label}`);
-        }
-      }
-      // Validate targets for deviation rules.
-      if (sub.inputRule === "sum_of_pct_deviation") {
-        for (const f of sub.inputFields) {
-          if (f.targetValue == null || f.targetValue === 0) {
-            throw new Error(`Sub-activity "${sub.name}" needs non-zero targets`);
-          }
-        }
-      }
-      if (sub.inputRule === "abs_deviation_from_target") {
-        for (const f of sub.inputFields) {
-          if (f.targetValue == null) throw new Error(`"${sub.name}" needs a target`);
-        }
-      }
-
-      const computed = computeValue(
-        {
-          id: sub.id,
-          inputRule: sub.inputRule,
-          sortDirection: sub.sortDirection,
-          inputFields: sub.inputFields.map((f) => ({ id: f.id, targetValue: f.targetValue })),
-        },
-        entry.raws,
-      );
-
-      const prior = await tx.scoreEntry.findUnique({
-        where: { teamId_subActivityId: { teamId, subActivityId: sub.id } },
-        include: { inputs: true },
-      });
-
-      const saved = await tx.scoreEntry.upsert({
-        where: { teamId_subActivityId: { teamId, subActivityId: sub.id } },
-        create: {
-          teamId,
-          subActivityId: sub.id,
-          computedValue: computed,
-          createdByAdminId: auth.adminId,
-        },
-        update: { computedValue: computed },
-      });
-
-      // Replace inputs.
-      await tx.scoreInput.deleteMany({ where: { scoreEntryId: saved.id } });
-      await tx.scoreInput.createMany({
-        data: sub.inputFields.map((f) => ({
-          scoreEntryId: saved.id,
-          inputFieldId: f.id,
-          rawValue: entry.raws[f.id],
+      const subShape = {
+        id: sub.id,
+        name: sub.name,
+        inputRule: sub.inputRule,
+        sortDirection: sub.sortDirection,
+        inputFields: sub.inputFields.map((f) => ({
+          id: f.id,
+          label: f.label,
+          targetValue: f.targetValue,
         })),
+      };
+
+      const computed = validateAndComputeSub(subShape, entry.raws);
+
+      const result = await persistSubScore(tx, {
+        teamId,
+        sub: subShape,
+        raws: entry.raws,
+        adminId: auth.adminId,
+        computed,
       });
 
       updatedEntries.push({
         subActivityId: sub.id,
         subActivityName: sub.name,
-        computedValue: computed,
-        priorComputedValue: prior?.computedValue ?? null,
-        isUpdate: !!prior,
-        scoreEntryId: saved.id,
+        computedValue: result.computedValue,
+        priorComputedValue: result.priorComputedValue,
+        isUpdate: result.isUpdate,
+        scoreEntryId: result.scoreEntryId,
       });
     }
   });
