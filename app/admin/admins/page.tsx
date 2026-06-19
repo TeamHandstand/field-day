@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { canResetAdminPasswords, DEFAULT_RESET_PASSWORD } from "@/lib/permissions";
 
 type AdminRow = {
   id: string;
@@ -12,6 +13,7 @@ type AdminRow = {
 export default function AdminsPage() {
   const { data: session } = useSession();
   const myId = (session?.user as { id?: string } | undefined)?.id;
+  const canReset = canResetAdminPasswords(session?.user?.email);
   const [admins, setAdmins] = useState<AdminRow[]>([]);
   const [form, setForm] = useState({ email: "", name: "", password: "" });
   const [creating, setCreating] = useState(false);
@@ -72,6 +74,48 @@ export default function AdminsPage() {
       return;
     }
     load();
+  };
+
+  // Reset another admin's password to the shared default ("loveya").
+  const resetDefault = async (id: string, email: string) => {
+    if (
+      !confirm(
+        `Reset ${email}'s password to "${DEFAULT_RESET_PASSWORD}"? They should change it after logging in.`,
+      )
+    )
+      return;
+    const r = await fetch(`/api/admins/${id}/password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      alert(body.error ?? "Could not reset password.");
+      return;
+    }
+    alert(`${email}'s password is now "${DEFAULT_RESET_PASSWORD}".`);
+  };
+
+  // Set a specific new password for another admin.
+  const setCustom = async (id: string, email: string) => {
+    const next = window.prompt(`New password for ${email} (at least 3 characters):`);
+    if (next == null) return;
+    if (next.length < 3) {
+      alert("Password must be at least 3 characters.");
+      return;
+    }
+    const r = await fetch(`/api/admins/${id}/password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newPassword: next }),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      alert(body.error ?? "Could not set password.");
+      return;
+    }
+    alert(`Updated ${email}'s password.`);
   };
 
   const changePassword = async (e: React.FormEvent) => {
@@ -151,22 +195,40 @@ export default function AdminsPage() {
         <h2 className="font-semibold">Current admins</h2>
         <ul className="divide-y divide-slate-200">
           {admins.map((a) => (
-            <li key={a.id} className="flex items-center justify-between py-3">
-              <div>
+            <li key={a.id} className="flex items-center justify-between gap-2 py-3">
+              <div className="min-w-0">
                 <div className="font-medium">{a.name || a.email}</div>
                 <div className="text-xs text-slate-500">
                   {a.email}
                   {a.id === myId ? " · you" : ""}
                 </div>
               </div>
-              {a.id !== myId && (
-                <button
-                  onClick={() => remove(a.id, a.email)}
-                  className="btn btn-ghost text-sm text-red-600"
-                >
-                  Remove
-                </button>
-              )}
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                {canReset && (
+                  <>
+                    <button
+                      onClick={() => resetDefault(a.id, a.email)}
+                      className="btn btn-ghost text-sm"
+                    >
+                      Reset to &ldquo;{DEFAULT_RESET_PASSWORD}&rdquo;
+                    </button>
+                    <button
+                      onClick={() => setCustom(a.id, a.email)}
+                      className="btn btn-ghost text-sm"
+                    >
+                      Set password…
+                    </button>
+                  </>
+                )}
+                {a.id !== myId && (
+                  <button
+                    onClick={() => remove(a.id, a.email)}
+                    className="btn btn-ghost text-sm text-red-600"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
             </li>
           ))}
           {admins.length === 0 && <p className="py-2 text-sm text-slate-500">Loading…</p>}
