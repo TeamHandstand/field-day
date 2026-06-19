@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useEventChannel } from "@/lib/pubnub-client";
 import type { LeaderboardData } from "@/lib/leaderboard";
 import { explainActivity } from "@/lib/explain";
+import { rankActivityLive, type ActivityShape, type SubActivityScore } from "@/lib/scoring";
+import { formatMeasure } from "@/lib/format";
 
 type Props = {
   eventId: string;
@@ -49,7 +51,6 @@ export function ActivityLeaderboard({ eventId, activityId, variant = "admin" }: 
   // Compute computed values per team for this activity (single sub-activity case)
   // and aggregated rank when sum_of_ranks. Already in liveActivityRanks for global cohort.
   // For cohort filter, ranks are recomputed from scratch over the visible cohort.
-  const subIds = activity.subActivities.map((s) => s.id);
   const visibleIds = new Set(visibleTeams.map((t) => t.id));
 
   const cohortScores = data.scores.filter(
@@ -79,42 +80,27 @@ export function ActivityLeaderboard({ eventId, activityId, variant = "admin" }: 
       rank: data.liveActivityRanks[activityId]?.[t.id] ?? null,
     }));
   } else {
-    // Recompute cohort-only ranks client-side using the same engine (locally lightweight).
-    const grouped = new Map<string, { teamId: string; computed: number }[]>();
-    for (const sid of subIds) {
-      grouped.set(
-        sid,
-        cohortScores
-          .filter((s) => s.subActivityId === sid)
-          .map((s) => ({ teamId: s.teamId, computed: s.computedValue })),
-      );
-    }
-    const sub = activity.subActivities;
-    const subRanks = new Map<string, Map<string, number>>();
-    for (const s of sub) {
-      const list = (grouped.get(s.id) ?? []).map((g) => ({ teamId: g.teamId, value: g.computed }));
-      subRanks.set(s.id, rankAveraged(list, s.sortDirection));
-    }
-    const eligible = new Set<string>();
-    for (const t of visibleTeams) {
-      if (sub.every((s) => subRanks.get(s.id)?.has(t.id))) eligible.add(t.id);
-    }
-    let activityRanks: Map<string, number>;
-    if (activity.aggregationRule === "single" && sub[0]) {
-      activityRanks = new Map(
-        Array.from(eligible).map((t) => [t, subRanks.get(sub[0].id)!.get(t)!]),
-      );
-    } else {
-      const sums = Array.from(eligible).map((t) => ({
-        teamId: t,
-        value: sub.reduce((acc, s) => acc + (subRanks.get(s.id)!.get(t) ?? 0), 0),
-      }));
-      activityRanks = rankAveraged(sums, "asc");
-    }
+    // Recompute cohort-only provisional ranks with the shared live engine.
+    const shape: ActivityShape = {
+      id: activity.id,
+      aggregationRule: activity.aggregationRule,
+      subActivities: activity.subActivities.map((s) => ({
+        id: s.id,
+        inputRule: s.inputRule,
+        sortDirection: s.sortDirection,
+        inputFields: s.inputFields.map((f) => ({ id: f.id, targetValue: f.targetValue })),
+      })),
+    };
+    const liveScores: SubActivityScore[] = cohortScores.map((s) => ({
+      subActivityId: s.subActivityId,
+      teamId: s.teamId,
+      computedValue: s.computedValue,
+    }));
+    const r = rankActivityLive(shape, liveScores, visibleTeams.map((t) => t.id));
     rows = visibleTeams.map((t) => ({
       teamId: t.id,
-      rank: activityRanks.get(t.id) ?? null,
-      excluded: !eligible.has(t.id),
+      rank: r.ranks.get(t.id) ?? null,
+      excluded: !r.ranks.has(t.id),
     }));
   }
 
@@ -203,12 +189,12 @@ export function ActivityLeaderboard({ eventId, activityId, variant = "admin" }: 
                           // eslint-disable-next-line @next/next/no-img-element
                           <img src={t.photoUrl} alt="" className="h-full w-full object-cover" />
                         ) : (
-                          `#${t.teamNumber}`
+                          `T${t.teamNumber}`
                         )}
                       </div>
                       <div>
                         <div className="font-semibold">{t.name}</div>
-                        <div className="text-xs text-slate-500">#{t.teamNumber}</div>
+                        <div className="text-xs text-slate-500">T{t.teamNumber}</div>
                       </div>
                     </div>
                   </td>
@@ -223,7 +209,7 @@ export function ActivityLeaderboard({ eventId, activityId, variant = "admin" }: 
                       <td key={s.id} className="px-2 py-2 text-center">
                         {score ? (
                           <span>
-                            {fmt(score.computedValue)}
+                            {formatMeasure(score.computedValue, s.inputFields[0]?.unit)}
                             <span className="ml-1 text-xs text-slate-500">{s.inputFields[0]?.unit}</span>
                           </span>
                         ) : (
@@ -243,28 +229,4 @@ export function ActivityLeaderboard({ eventId, activityId, variant = "admin" }: 
       </div>
     </div>
   );
-}
-
-function fmt(n: number): string {
-  if (Number.isInteger(n)) return n.toString();
-  return n.toFixed(2);
-}
-
-function rankAveraged(
-  values: { teamId: string; value: number }[],
-  sort: "asc" | "desc",
-): Map<string, number> {
-  if (values.length === 0) return new Map();
-  const cmp = (a: number, b: number) => (sort === "asc" ? a - b : b - a);
-  const sorted = [...values].sort((a, b) => cmp(a.value, b.value));
-  const out = new Map<string, number>();
-  let i = 0;
-  while (i < sorted.length) {
-    let j = i;
-    while (j + 1 < sorted.length && sorted[j + 1].value === sorted[i].value) j++;
-    const avg = ((i + 1) + (j + 1)) / 2;
-    for (let k = i; k <= j; k++) out.set(sorted[k].teamId, avg);
-    i = j + 1;
-  }
-  return out;
 }

@@ -1,10 +1,11 @@
 import { prisma } from "./prisma";
 import {
   finalize,
-  rankActivity,
-  rankWithAveragedTies,
+  rankActivityLive,
+  computeLiveStandings,
   type ActivityShape,
   type SubActivityScore,
+  type InputRule,
 } from "./scoring";
 
 export type LeaderboardData = {
@@ -30,7 +31,7 @@ export type LeaderboardData = {
     subActivities: {
       id: string;
       name: string;
-      inputRule: "single_value" | "sum_of_pct_deviation" | "abs_deviation_from_target";
+      inputRule: InputRule;
       sortDirection: "asc" | "desc";
       inputFields: { id: string; label: string; unit: string; targetValue: number | null }[];
     }[];
@@ -40,10 +41,20 @@ export type LeaderboardData = {
     activityId: string;
     subActivityId: string;
     computedValue: number;
+    // The raw value(s) the host entered, kept alongside the derived score so the
+    // UI can show what was actually recorded rather than the computed deviation.
+    inputs: { inputFieldId: string; rawValue: number }[];
   }[];
-  // Live (pre-finalization) per-activity rank for each team that has full coverage.
+  // Live (pre-finalization) per-activity rank. Provisional: a team is ranked on
+  // whatever sub-activities it has completed so far, so partial events still rank.
   liveActivityRanks: Record<string /* activityId */, Record<string /* teamId */, number>>;
   liveSubActivityRanks: Record<string /* subActivityId */, Record<string /* teamId */, number>>;
+  // Live overall standings (provisional total points + global rank), updated as
+  // scores are logged so the board doesn't sit at "—" until finalization.
+  liveStandings: {
+    totals: Record<string /* teamId */, number>;
+    globalRanks: Record<string /* teamId */, number>;
+  };
   finalized: {
     totalTeams: number;
     activities: {
@@ -72,7 +83,7 @@ export async function loadLeaderboard(eventId: string): Promise<LeaderboardData 
             orderBy: { displayOrder: "asc" },
             include: {
               inputFields: { orderBy: { displayOrder: "asc" } },
-              scoreEntries: true,
+              scoreEntries: { include: { inputs: true } },
             },
           },
         },
@@ -121,6 +132,7 @@ export async function loadLeaderboard(eventId: string): Promise<LeaderboardData 
           activityId: a.id,
           subActivityId: s.id,
           computedValue: e.computedValue,
+          inputs: e.inputs.map((i) => ({ inputFieldId: i.inputFieldId, rawValue: i.rawValue })),
         });
       }
     }
@@ -140,27 +152,26 @@ export async function loadLeaderboard(eventId: string): Promise<LeaderboardData 
     });
   }
 
-  for (const a of activities) {
-    const shape: ActivityShape = {
-      id: a.id,
-      aggregationRule: a.aggregationRule,
-      subActivities: a.subActivities.map((s) => ({
-        id: s.id,
-        inputRule: s.inputRule,
-        sortDirection: s.sortDirection,
-        inputFields: s.inputFields.map((f) => ({ id: f.id, targetValue: f.targetValue })),
-      })),
-    };
-    const r = rankActivity(shape, scoresByActivity.get(a.id) ?? [], allTeamIds);
-    liveActivityRanks[a.id] = Object.fromEntries(r.ranks);
+  const activityShapes: ActivityShape[] = activities.map((a) => ({
+    id: a.id,
+    aggregationRule: a.aggregationRule,
+    subActivities: a.subActivities.map((s) => ({
+      id: s.id,
+      inputRule: s.inputRule,
+      sortDirection: s.sortDirection,
+      inputFields: s.inputFields.map((f) => ({ id: f.id, targetValue: f.targetValue })),
+    })),
+  }));
+
+  for (const shape of activityShapes) {
+    const r = rankActivityLive(shape, scoresByActivity.get(shape.id) ?? [], allTeamIds);
+    liveActivityRanks[shape.id] = Object.fromEntries(r.ranks);
     for (const [sid, m] of r.subActivityRanks) {
       liveSubActivityRanks[sid] = Object.fromEntries(m);
     }
-
-    // For single-aggregation, rankActivity already filled subActivityRanks.
-    // For activities with no full coverage, also expose individual subRanks for
-    // display purposes (rankActivity does include them either way).
   }
+
+  const liveStandings = computeLiveStandings(activityShapes, scoresByActivity, allTeamIds);
 
   const finalizedSnap =
     event.isFinalized && event.finalizedSnapshot
@@ -190,6 +201,7 @@ export async function loadLeaderboard(eventId: string): Promise<LeaderboardData 
     scores,
     liveActivityRanks,
     liveSubActivityRanks,
+    liveStandings,
     finalized: finalizedSnap,
   };
 }

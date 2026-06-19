@@ -16,6 +16,8 @@ enum InputRule {
   single_value
   sum_of_pct_deviation
   abs_deviation_from_target
+  circular_deviation
+  abs_difference
 }
 
 enum SortDirection {

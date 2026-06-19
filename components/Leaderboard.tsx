@@ -47,6 +47,15 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
   const finalized = data.finalized;
   const isFinalized = data.event.isFinalized && !!finalized;
 
+  // Overall rank/total come from the finalized snapshot once stamped, otherwise
+  // from the live (provisional) standings so the board updates as scores land.
+  const globalRankFor = (teamId: string): number | undefined =>
+    isFinalized ? finalized!.globalRanks[teamId] : data.liveStandings.globalRanks[teamId];
+  const totalFor = (teamId: string): number | undefined =>
+    isFinalized ? finalized!.totals[teamId] : data.liveStandings.totals[teamId];
+  const fmtTotal = (n: number | undefined): string =>
+    n == null ? "—" : Number.isInteger(n) ? n.toString() : n.toFixed(1);
+
   // Resolve the rank a team holds in a given activity column, picking the
   // finalized snapshot when available so the visible sort matches the visible numbers.
   const activityRankFor = (teamId: string, activityId: string): number | undefined => {
@@ -66,13 +75,11 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
       if (ra !== rb) return ra - rb;
       return a.teamNumber - b.teamNumber;
     }
-    if (isFinalized) {
-      const ra = finalized!.globalRanks[a.id];
-      const rb = finalized!.globalRanks[b.id];
-      if (ra != null && rb != null) return ra - rb;
-      if (ra != null) return -1;
-      if (rb != null) return 1;
-    }
+    const ra = globalRankFor(a.id);
+    const rb = globalRankFor(b.id);
+    if (ra != null && rb != null && ra !== rb) return ra - rb;
+    if (ra != null && rb == null) return -1;
+    if (ra == null && rb != null) return 1;
     return a.teamNumber - b.teamNumber;
   });
 
@@ -111,7 +118,8 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
 
       {!isFinalized && (
         <p className={variant === "public" ? "text-slate-300" : "text-sm text-slate-500"}>
-          Final standings published when the event ends.
+          Provisional standings — they update live as scores are logged. Final standings are
+          published when the event ends.
         </p>
       )}
 
@@ -175,13 +183,12 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                   </th>
                 );
               })}
-              {isFinalized && <th className="px-2 py-2 text-center font-semibold">Total</th>}
+              <th className="px-2 py-2 text-center font-semibold">Total</th>
             </tr>
           </thead>
           <tbody>
             {sortedTeams.map((t) => {
-              const totalPts = isFinalized ? finalized!.totals[t.id] ?? 0 : null;
-              const globalRank = isFinalized ? finalized!.globalRanks[t.id] : null;
+              const globalRank = globalRankFor(t.id);
               const teamCellInner = (
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-slate-300 text-xs font-bold text-slate-700">
@@ -189,7 +196,7 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={t.photoUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      `#${t.teamNumber}`
+                      `T${t.teamNumber}`
                     )}
                   </div>
                   <div>
@@ -199,7 +206,7 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                         variant === "public" ? "text-xs text-slate-400" : "text-xs text-slate-500"
                       }
                     >
-                      #{t.teamNumber}
+                      T{t.teamNumber}
                       {t.cohortNumber != null ? ` · Cohort ${t.cohortNumber}` : ""}
                     </div>
                   </div>
@@ -261,9 +268,9 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                       </td>
                     );
                   })}
-                  {isFinalized && (
-                    <td className="rounded-r-lg px-2 py-2 text-center text-xl font-bold">{totalPts}</td>
-                  )}
+                  <td className="rounded-r-lg px-2 py-2 text-center text-xl font-bold">
+                    {fmtTotal(totalFor(t.id))}
+                  </td>
                 </tr>
               );
             })}

@@ -41,6 +41,19 @@ export function explainSubActivity(sub: SubActivityForExplain): string {
       const unit = f?.unit ?? "value";
       return `**${sub.name}** scores how far the submitted ${unit} is from ${target}. Closest to target is best.`;
     }
+    case "circular_deviation": {
+      const f = sub.inputFields[0];
+      const unit = f?.unit ?? "degrees";
+      const target = f?.targetValue ?? 0;
+      const heading = target === 0 ? "North (0°)" : `${target}°`;
+      return `Each team submits a ${unit} bearing for **${sub.name}**. We score how far it is from ${heading}, wrapping around 360° (so 350° counts as 10° off). Closest is best.`;
+    }
+    case "abs_difference": {
+      const a = sub.inputFields[0]?.label ?? "the first value";
+      const b = sub.inputFields[1]?.label ?? "the second value";
+      const unit = sub.inputFields[0]?.unit ?? "value";
+      return `**${sub.name}** takes two ${unit} values (${a} and ${b}) that should match. The score is the gap between them — the closer, the better.`;
+    }
   }
 }
 

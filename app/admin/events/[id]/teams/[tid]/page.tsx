@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { LeaderboardData } from "@/lib/leaderboard";
+import { summarizeRecorded, deviationToneClass } from "@/lib/format";
 
 type RosterUser = { id: string; firstName: string; lastName: string };
 
@@ -20,10 +21,6 @@ function ordinal(n: number): string {
   return `${n}${suffix[(v - 20) % 10] ?? suffix[v] ?? suffix[0]}`;
 }
 
-function fmt(n: number): string {
-  if (Number.isInteger(n)) return n.toString();
-  return n.toFixed(2);
-}
 
 export default function TeamDetail({ params }: { params: { id: string; tid: string } }) {
   const [team, setTeam] = useState<Team | null>(null);
@@ -213,6 +210,7 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
         return {
           sub: s,
           computed: score?.computedValue ?? null,
+          inputs: score?.inputs ?? [],
           rank: board.liveSubActivityRanks[s.id]?.[team.id] ?? null,
         };
       });
@@ -250,12 +248,12 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
             // eslint-disable-next-line @next/next/no-img-element
             <img src={team.photos[0].s3Url} alt="" className="h-full w-full object-cover" />
           ) : (
-            `#${team.teamNumber}`
+            `T${team.teamNumber}`
           )}
         </div>
         <div>
           <h1 className="text-2xl font-bold">
-            #{team.teamNumber} {team.name}
+            T{team.teamNumber} {team.name}
           </h1>
           <p className="text-sm text-slate-500">
             {team.cohortNumber ? `Cohort ${team.cohortNumber}` : "No cohort"}
@@ -310,22 +308,32 @@ export default function TeamDetail({ params }: { params: { id: string; tid: stri
                   </div>
                   <table className="mt-2 w-full text-sm">
                     <tbody>
-                      {row.subs.map(({ sub, computed, rank }) => (
+                      {row.subs.map(({ sub, computed, inputs, rank }) => {
+                        const summary =
+                          computed != null
+                            ? summarizeRecorded(
+                                sub.inputRule,
+                                sub.inputFields,
+                                new Map(inputs.map((i) => [i.inputFieldId, i.rawValue])),
+                                computed,
+                              )
+                            : null;
+                        return (
                         <tr key={sub.id} className="border-t border-slate-100">
                           <td className="py-1 pr-2 text-slate-600">{sub.name}</td>
-                          <td className="py-1 pr-2 text-right font-medium">
-                            {computed != null ? fmt(computed) : "—"}
-                            {sub.inputFields[0]?.unit && (
-                              <span className="ml-1 text-xs text-slate-500">
-                                {sub.inputFields[0].unit}
-                              </span>
-                            )}
+                          <td
+                            className={`py-1 pr-2 text-right font-medium ${
+                              summary ? deviationToneClass(summary.tone) : ""
+                            }`}
+                          >
+                            {summary ? summary.text : "—"}
                           </td>
                           <td className="w-16 py-1 text-right text-xs text-slate-500">
                             {rank != null ? ordinal(Math.round(rank)) : "—"}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </li>

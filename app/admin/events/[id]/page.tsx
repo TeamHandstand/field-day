@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { canDeleteEvent } from "@/lib/permissions";
 
 type EventDetail = {
   id: string;
@@ -22,6 +24,8 @@ type Gap = {
 
 export default function EventDashboard({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { data: session } = useSession();
+  const canDelete = canDeleteEvent(session?.user?.email);
   const [data, setData] = useState<EventDetail | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState("");
@@ -207,9 +211,11 @@ export default function EventDashboard({ params }: { params: { id: string } }) {
             </div>
           </div>
         )}
-        <button className="btn btn-danger" onClick={remove}>
-          Delete event
-        </button>
+        {canDelete && (
+          <button className="btn btn-danger" onClick={remove}>
+            Delete event
+          </button>
+        )}
       </section>
 
       {showFinalize && (
@@ -229,7 +235,7 @@ export default function EventDashboard({ params }: { params: { id: string } }) {
                   {gaps.map((g) => (
                     <li key={g.teamId} className="rounded-md bg-amber-50 p-2">
                       <div className="font-medium">
-                        #{g.teamNumber} {g.teamName}
+                        T{g.teamNumber} {g.teamName}
                       </div>
                       <ul className="ml-4 list-disc text-xs text-slate-600">
                         {g.missing.map((m) => (
