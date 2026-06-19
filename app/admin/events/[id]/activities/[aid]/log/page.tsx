@@ -11,6 +11,7 @@ import {
 } from "@/lib/scoring";
 import { summarizeRecorded, deviationToneClass } from "@/lib/format";
 import { useEventChannel } from "@/lib/pubnub-client";
+import BatchScoreView from "./BatchScoreView";
 
 type SubActivity = {
   id: string;
@@ -74,6 +75,17 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
   const [showExplain, setShowExplain] = useState(false);
   const [sortBy, setSortBy] = useState<SortMode>("number");
   const [savedTeamName, setSavedTeamName] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"team" | "sub">("team");
+
+  // Restore the host's preferred layout once on mount; persist on change.
+  useEffect(() => {
+    const saved = window.localStorage.getItem("logViewMode");
+    if (saved === "team" || saved === "sub") setViewMode(saved);
+  }, []);
+  const setView = (m: "team" | "sub") => {
+    setViewMode(m);
+    window.localStorage.setItem("logViewMode", m);
+  };
 
   const load = useCallback(async () => {
     const [a, ev] = await Promise.all([
@@ -212,6 +224,32 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
           </button>
         </div>
       </div>
+
+      {/* Layout toggle — lets the host log team-by-team (modal) or batch a single
+          sub-activity across every team. Choice persists across activities. */}
+      <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+        <button
+          onClick={() => setView("team")}
+          className={`rounded px-3 py-1 ${
+            viewMode === "team" ? "bg-brand text-white" : "text-slate-600 hover:text-brand"
+          }`}
+        >
+          By team
+        </button>
+        <button
+          onClick={() => setView("sub")}
+          className={`rounded px-3 py-1 ${
+            viewMode === "sub" ? "bg-brand text-white" : "text-slate-600 hover:text-brand"
+          }`}
+        >
+          By sub-activity
+        </button>
+      </div>
+
+      {viewMode === "sub" ? (
+        <BatchScoreView eventId={params.id} activityId={params.aid} />
+      ) : (
+        <>
 
       {savedTeamName && (
         <div className="flex items-center justify-between rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-800">
@@ -420,6 +458,8 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );
