@@ -9,7 +9,8 @@ export type EventChannelMessage = {
     | "event_finalized"
     | "event_unlocked"
     | "team_changed"
-    | "activity_changed";
+    | "activity_changed"
+    | "timer_updated";
   eventId: string;
   payload?: Record<string, unknown>;
   ts: number;

@@ -44,6 +44,14 @@ model Event {
   lockedAt           DateTime?
   finalizedAt        DateTime?
   finalizedSnapshot  Json?
+  // Global shared event countdown timer. timerRunning marks whether it's
+  // counting; timerStartedAt is the wall-clock instant it (re)started; remaining
+  // time is derived (duration - (now - timerStartedAt)) so every phone shows the
+  // same countdown without polling. timerDurationSeconds is the configurable
+  // length it counts down from (default 20 minutes).
+  timerRunning          Boolean    @default(false)
+  timerStartedAt        DateTime?
+  timerDurationSeconds  Int        @default(1200)
   teams              Team[]
   activities         Activity[]
   auditLogs          AuditLog[]
