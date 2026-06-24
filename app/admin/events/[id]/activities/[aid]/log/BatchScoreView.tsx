@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TimeInput, shouldUseTimeInput } from "@/components/TimeInput";
 
 type InputField = { id: string; label: string; unit: string; targetValue: number | null };
@@ -70,6 +70,12 @@ export default function BatchScoreView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  // Per-team auto-save status, so each row can show its own "Saving…"/error state
+  // without a global spinner or a full reload of the grid.
+  const [savingTeams, setSavingTeams] = useState<Record<string, boolean>>({});
+  const [teamErrors, setTeamErrors] = useState<Record<string, string>>({});
+  // Guards against firing a second POST for a team while its save is in flight.
+  const inFlight = useRef<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,7 +156,88 @@ export default function BatchScoreView({
   const setRaw = (teamId: string, fieldId: string, value: string) => {
     setRaws((prev) => ({ ...prev, [teamId]: { ...prev[teamId], [fieldId]: value } }));
     setSavedMsg(null);
+    // A fresh edit supersedes any prior failed save for this team.
+    setTeamErrors((prev) => {
+      if (!(teamId in prev)) return prev;
+      const next = { ...prev };
+      delete next[teamId];
+      return next;
+    });
   };
+
+  // Mark the given sub-activity's fields for a set of teams as persisted, copying
+  // the raw values into `stored`. This is how a save "sticks" without re-fetching
+  // the whole grid — `stored` drives the Saved/Edited badges and the pill counts.
+  const commitStored = useCallback(
+    (s: SubActivity, snapshots: Record<string, Record<string, string>>) => {
+      setStored((prev) => {
+        const next = { ...prev };
+        for (const [teamId, snap] of Object.entries(snapshots)) {
+          next[teamId] = { ...next[teamId] };
+          for (const f of s.inputFields) {
+            if (snap[f.id] !== undefined) next[teamId][f.id] = snap[f.id];
+          }
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  // Auto-save a single team's row when it loses focus, provided the row is fully
+  // filled and actually changed. Updates only that team's `stored` on success so
+  // the rest of the page never reloads or loses in-progress edits elsewhere.
+  const saveTeam = useCallback(
+    async (teamId: string) => {
+      if (!sub) return;
+      const teamRaws = raws[teamId];
+      if (!isComplete(sub, teamRaws) || !isChanged(sub, teamRaws, stored[teamId])) return;
+      if (inFlight.current[teamId]) return;
+      inFlight.current[teamId] = true;
+      setSavingTeams((prev) => ({ ...prev, [teamId]: true }));
+
+      // Snapshot exactly what we send so `stored` matches the persisted values even
+      // if the host keeps typing in another row while this request is in flight.
+      const snapshot: Record<string, string> = {};
+      const r: Record<string, number> = {};
+      for (const f of sub.inputFields) {
+        snapshot[f.id] = teamRaws![f.id];
+        r[f.id] = parseFloat(teamRaws![f.id]);
+      }
+      try {
+        const res = await fetch("/api/scores/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ activityId, subActivityId: sub.id, teams: [{ teamId, raws: r }] }),
+        });
+        if (!res.ok) {
+          const msg = (await res.json().catch(() => ({}))).error ?? "Save failed";
+          setTeamErrors((prev) => ({ ...prev, [teamId]: msg }));
+          return;
+        }
+        setTeamErrors((prev) => {
+          if (!(teamId in prev)) return prev;
+          const next = { ...prev };
+          delete next[teamId];
+          return next;
+        });
+        commitStored(sub, { [teamId]: snapshot });
+      } catch (e) {
+        setTeamErrors((prev) => ({
+          ...prev,
+          [teamId]: e instanceof Error ? e.message : "Save failed",
+        }));
+      } finally {
+        inFlight.current[teamId] = false;
+        setSavingTeams((prev) => {
+          const next = { ...prev };
+          delete next[teamId];
+          return next;
+        });
+      }
+    },
+    [sub, raws, stored, activityId, commitStored],
+  );
 
   const dirtyTeamIds = useMemo(() => {
     if (!sub) return [] as string[];
@@ -164,9 +251,14 @@ export default function BatchScoreView({
     [sub, visibleTeams, raws],
   );
 
+  const savingCount = Object.values(savingTeams).filter(Boolean).length;
+  const errorCount = Object.keys(teamErrors).length;
+
   const guardedSwitch = (fn: () => void) => {
-    if (dirtyTeamIds.length > 0) {
-      if (!window.confirm("You have unsaved values. Discard them and switch?")) return;
+    // Edited rows auto-save on blur, so a lingering dirty row here means a save is
+    // still pending or failed — warn before navigating away from it.
+    if (dirtyTeamIds.length > 0 || errorCount > 0) {
+      if (!window.confirm("Some rows haven’t saved yet. Switch anyway?")) return;
     }
     fn();
   };
@@ -176,9 +268,15 @@ export default function BatchScoreView({
     setSaving(true);
     setError(null);
     try {
+      const snapshots: Record<string, Record<string, string>> = {};
       const payloadTeams = dirtyTeamIds.map((teamId) => {
         const r: Record<string, number> = {};
-        for (const f of sub.inputFields) r[f.id] = parseFloat(raws[teamId][f.id]);
+        const snap: Record<string, string> = {};
+        for (const f of sub.inputFields) {
+          r[f.id] = parseFloat(raws[teamId][f.id]);
+          snap[f.id] = raws[teamId][f.id];
+        }
+        snapshots[teamId] = snap;
         return { teamId, raws: r };
       });
       if (payloadTeams.length === 0) {
@@ -197,7 +295,9 @@ export default function BatchScoreView({
       setSavedMsg(
         `Saved ${payloadTeams.length} team${payloadTeams.length === 1 ? "" : "s"} for ${sub.name}.`,
       );
-      await load();
+      // Update only the just-saved rows in place instead of refetching the whole
+      // grid, so the page doesn't flash/reload and unrelated edits are preserved.
+      commitStored(sub, snapshots);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
     } finally {
@@ -261,6 +361,8 @@ export default function BatchScoreView({
             const complete = isComplete(sub, teamRaws);
             const partial = isPartial(sub, teamRaws);
             const changed = isChanged(sub, teamRaws, stored[t.id]);
+            const isSaving = savingTeams[t.id];
+            const teamError = teamErrors[t.id];
             const useTime =
               sub.inputFields.length === 1 &&
               shouldUseTimeInput(sub.inputRule, sub.inputFields[0].unit);
@@ -281,12 +383,27 @@ export default function BatchScoreView({
                   <div className="min-w-0">
                     <div className="font-semibold">
                       T{t.teamNumber} {t.name}
-                      {complete && changed && <span className="badge badge-blue ml-2">Edited</span>}
-                      {complete && !changed && (
-                        <span className="badge badge-green ml-2">Saved</span>
+                      {isSaving ? (
+                        <span className="badge badge-blue ml-2">Saving…</span>
+                      ) : teamError ? (
+                        <span className="badge badge-red ml-2">Not saved</span>
+                      ) : (
+                        <>
+                          {complete && changed && (
+                            <span className="badge badge-amber ml-2">Unsaved</span>
+                          )}
+                          {complete && !changed && (
+                            <span className="badge badge-green ml-2">Saved</span>
+                          )}
+                          {partial && <span className="badge badge-amber ml-2">Incomplete</span>}
+                        </>
                       )}
-                      {partial && <span className="badge badge-amber ml-2">Incomplete</span>}
                     </div>
+                    {teamError && (
+                      <div className="mt-0.5 text-xs font-medium text-red-600">
+                        Couldn’t save: {teamError} — fix and re-enter to retry.
+                      </div>
+                    )}
                     {t.rosterUsers.length > 0 && (
                       <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-slate-500">
                         {t.rosterUsers.map((m, i) => (
@@ -308,6 +425,7 @@ export default function BatchScoreView({
                       <TimeInput
                         value={teamRaws?.[sub.inputFields[0].id] ?? ""}
                         onChange={(v) => setRaw(t.id, sub.inputFields[0].id, v)}
+                        onBlur={() => saveTeam(t.id)}
                       />
                     </div>
                   ) : (
@@ -327,6 +445,7 @@ export default function BatchScoreView({
                           step="any"
                           value={teamRaws?.[f.id] ?? ""}
                           onChange={(e) => setRaw(t.id, f.id, e.target.value)}
+                          onBlur={() => saveTeam(t.id)}
                         />
                       </div>
                     ))
@@ -342,9 +461,20 @@ export default function BatchScoreView({
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white px-4 py-3">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
           <p className="text-xs text-slate-500">
-            {partialCount > 0
-              ? `${partialCount} row${partialCount === 1 ? "" : "s"} partially filled — complete or clear to save.`
-              : `${dirtyTeamIds.length} change${dirtyTeamIds.length === 1 ? "" : "s"} ready.`}
+            {errorCount > 0 ? (
+              <span className="font-medium text-red-600">
+                {errorCount} row{errorCount === 1 ? "" : "s"} failed to save — see highlighted
+                rows.
+              </span>
+            ) : savingCount > 0 ? (
+              "Saving…"
+            ) : partialCount > 0 ? (
+              `${partialCount} row${partialCount === 1 ? "" : "s"} partially filled — complete to save.`
+            ) : dirtyTeamIds.length > 0 ? (
+              `${dirtyTeamIds.length} edited row${dirtyTeamIds.length === 1 ? "" : "s"} — saved when you tap out of the field.`
+            ) : (
+              "Scores save automatically as you move between fields."
+            )}
           </p>
           <button
             className="btn btn-primary"
@@ -353,7 +483,9 @@ export default function BatchScoreView({
           >
             {saving
               ? "Saving…"
-              : `Save ${dirtyTeamIds.length} change${dirtyTeamIds.length === 1 ? "" : "s"}`}
+              : dirtyTeamIds.length > 0
+                ? `Save ${dirtyTeamIds.length} now`
+                : "All saved"}
           </button>
         </div>
       </div>

@@ -49,11 +49,13 @@ function formatDisplay(digits: string): string {
 export function TimeInput({
   value,
   onChange,
+  onBlur,
   autoFocus = false,
   disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   autoFocus?: boolean;
   disabled?: boolean;
 }) {
@@ -99,6 +101,7 @@ export function TimeInput({
         autoFocus={autoFocus}
         disabled={disabled}
         onChange={(e) => apply(e.target.value)}
+        onBlur={onBlur}
       />
       <div className="mt-0.5 text-xs text-slate-500">minutes : seconds</div>
     </div>
