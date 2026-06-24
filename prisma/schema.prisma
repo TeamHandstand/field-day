@@ -44,6 +44,11 @@ model Event {
   lockedAt           DateTime?
   finalizedAt        DateTime?
   finalizedSnapshot  Json?
+  // Global shared event stopwatch. timerRunning marks whether it's counting;
+  // timerStartedAt is the wall-clock instant it (re)started. Elapsed is derived
+  // (now - timerStartedAt) so every phone shows the same time without polling.
+  timerRunning       Boolean    @default(false)
+  timerStartedAt     DateTime?
   teams              Team[]
   activities         Activity[]
   auditLogs          AuditLog[]

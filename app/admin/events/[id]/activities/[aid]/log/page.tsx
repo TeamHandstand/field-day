@@ -204,9 +204,10 @@ export default function ScoreLogPage({ params }: { params: { id: string; aid: st
 
   return (
     <div className="space-y-4">
-      {/* Sticky context bar — pinned just below the admin nav so the host always
-          knows which event + activity they're logging into. */}
-      <div className="sticky top-[3.5rem] z-20 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 py-2 backdrop-blur">
+      {/* Sticky context bar — pinned just below the timer banner + admin nav stack
+          (3.5rem banner + 3.5rem nav = 7rem) so the host always knows which event +
+          activity they're logging into. */}
+      <div className="sticky top-28 z-20 -mx-4 border-b border-slate-200 bg-slate-50/95 px-4 py-2 backdrop-blur">
         <Link
           href={`/admin/events/${params.id}`}
           className="text-xs text-slate-500 hover:text-brand"
