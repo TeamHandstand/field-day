@@ -46,9 +46,18 @@ export default function EventsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Events</h1>
-        <p className="text-sm text-slate-600">Create and manage your scoring events.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Events</h1>
+          <p className="text-sm text-slate-600">Create and manage your scoring events.</p>
+        </div>
+        <a
+          href="/api/export"
+          className="btn btn-secondary"
+          title="Download every team's scores across all events as a CSV"
+        >
+          Export all data (CSV)
+        </a>
       </div>
 
       <form onSubmit={create} className="card flex flex-col gap-3 sm:flex-row">
