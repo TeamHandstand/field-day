@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useEventChannel } from "@/lib/pubnub-client";
 import type { LeaderboardData } from "@/lib/leaderboard";
+import { TeamScoreBreakdown } from "./TeamScoreBreakdown";
 
 type Props = {
   eventId: string;
@@ -22,6 +23,9 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
   const [data, setData] = useState<LeaderboardData | null>(null);
   const [cohort, setCohort] = useState(initialCohort);
   const [sortBy, setSortBy] = useState<SortBy>({ kind: "default" });
+  // Which team's score breakdown is expanded inline. Click a row's caret to
+  // drill into what that team actually scored on each activity/sub-activity.
+  const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/events/${eventId}/leaderboard`);
@@ -113,6 +117,15 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
               Cohort {c}
             </button>
           ))}
+          {variant === "admin" && (
+            <a
+              href={`/api/export?eventId=${eventId}`}
+              className="btn btn-secondary text-sm"
+              title="Download this event's full scoring data as CSV"
+            >
+              Export CSV
+            </a>
+          )}
         </div>
       </div>
 
@@ -157,6 +170,7 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
         >
           <thead>
             <tr className={variant === "public" ? "text-slate-400" : "text-slate-500"}>
+              <th className="w-6 px-1 py-2" aria-hidden />
               <th className="px-2 py-2 text-left">Rank</th>
               <th className="px-2 py-2 text-left">Team</th>
               {data.activities.map((a) => {
@@ -212,16 +226,32 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                   </div>
                 </div>
               );
+              const isExpanded = expandedTeam === t.id;
               return (
+                <Fragment key={t.id}>
                 <tr
-                  key={t.id}
                   className={
                     variant === "public"
-                      ? "rounded-lg bg-slate-800/60"
-                      : "rounded-lg bg-white shadow-sm"
+                      ? "bg-slate-800/60"
+                      : "bg-white shadow-sm"
                   }
                 >
-                  <td className="rounded-l-lg px-2 py-2 font-bold">
+                  <td className={`${isExpanded ? "" : "rounded-l-lg"} px-1 py-2 text-center`}>
+                    <button
+                      onClick={() => setExpandedTeam(isExpanded ? null : t.id)}
+                      aria-label={isExpanded ? "Collapse breakdown" : "Show breakdown"}
+                      aria-expanded={isExpanded}
+                      className={
+                        variant === "public"
+                          ? "text-slate-400 hover:text-slate-200"
+                          : "text-slate-400 hover:text-brand"
+                      }
+                      title={isExpanded ? "Hide score breakdown" : "Show score breakdown"}
+                    >
+                      <span className="inline-block text-xs">{isExpanded ? "▾" : "▸"}</span>
+                    </button>
+                  </td>
+                  <td className="px-2 py-2 font-bold">
                     {globalRank != null ? ordinal(Math.round(globalRank)) : "—"}
                   </td>
                   <td className="px-2 py-2">
@@ -268,10 +298,22 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
                       </td>
                     );
                   })}
-                  <td className="rounded-r-lg px-2 py-2 text-center text-xl font-bold">
+                  <td className={`${isExpanded ? "" : "rounded-r-lg"} px-2 py-2 text-center text-xl font-bold`}>
                     {fmtTotal(totalFor(t.id))}
                   </td>
                 </tr>
+                {isExpanded && (
+                  <tr
+                    className={
+                      variant === "public" ? "bg-slate-800/40" : "bg-slate-50"
+                    }
+                  >
+                    <td className="rounded-b-lg px-3 pb-3 pt-1" colSpan={data.activities.length + 4}>
+                      <TeamScoreBreakdown data={data} teamId={t.id} variant={variant} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>
