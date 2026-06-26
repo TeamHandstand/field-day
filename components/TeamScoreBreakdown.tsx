@@ -1,6 +1,6 @@
 "use client";
 import type { LeaderboardData } from "@/lib/leaderboard";
-import { formatMeasure, deviationToneClass, type DeviationTone } from "@/lib/format";
+import { formatMeasureWithUnit, formatDeviation, deviationToneClass } from "@/lib/format";
 
 // Inline drill-down for a single team: what they actually scored on every
 // activity, broken down to each sub-activity's input field. Where a field carries
@@ -98,7 +98,7 @@ export function TeamScoreBreakdown({ data, teamId, variant = "admin" }: Props) {
                       </td>
                       <td className="py-1 pr-2 text-right align-top font-medium">
                         {fields.length === 0 ? (
-                          score ? formatMeasure(score.computedValue) : "—"
+                          score ? formatMeasureWithUnit(score.computedValue) : "—"
                         ) : (
                           <div className="space-y-0.5">
                             {fields.map((f) => {
@@ -110,18 +110,7 @@ export function TeamScoreBreakdown({ data, teamId, variant = "admin" }: Props) {
                                       {f.label}:
                                     </span>
                                   )}
-                                  {raw != null ? (
-                                    <>
-                                      {formatMeasure(raw, f.unit)}
-                                      {f.unit ? (
-                                        <span className={`ml-1 text-xs ${dark ? "text-slate-500" : "text-slate-400"}`}>
-                                          {f.unit}
-                                        </span>
-                                      ) : null}
-                                    </>
-                                  ) : (
-                                    "—"
-                                  )}
+                                  {raw != null ? formatMeasureWithUnit(raw, f.unit) : "—"}
                                 </div>
                               );
                             })}
@@ -135,7 +124,7 @@ export function TeamScoreBreakdown({ data, teamId, variant = "admin" }: Props) {
                           <div className="space-y-0.5">
                             {fields.map((f) => (
                               <div key={f.id}>
-                                {f.targetValue != null ? formatMeasure(f.targetValue, f.unit) : "—"}
+                                {f.targetValue != null ? formatMeasureWithUnit(f.targetValue, f.unit) : "—"}
                               </div>
                             ))}
                           </div>
@@ -155,14 +144,10 @@ export function TeamScoreBreakdown({ data, teamId, variant = "admin" }: Props) {
                                   </div>
                                 );
                               }
-                              const diff = raw - f.targetValue;
-                              const tone: DeviationTone = diff > 0 ? "over" : diff < 0 ? "under" : "on";
-                              const sign = diff > 0 ? "+" : diff < 0 ? "-" : "";
+                              const dev = formatDeviation(raw, f.targetValue, f.unit);
                               return (
-                                <div key={f.id} className={deviationToneClass(tone)}>
-                                  {sign}
-                                  {formatMeasure(Math.abs(diff), f.unit)}
-                                  {f.unit ? <span className="ml-1 text-xs opacity-75">{f.unit}</span> : null}
+                                <div key={f.id} className={deviationToneClass(dev.tone)}>
+                                  {dev.text}
                                 </div>
                               );
                             })}
