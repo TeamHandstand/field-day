@@ -101,23 +101,25 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
         <h2 className={variant === "public" ? "text-3xl font-bold" : "text-xl font-semibold"}>
           {isFinalized ? "Final Results" : "Live Standings"} — {data.event.name}
         </h2>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setCohort("all")}
-            className={`btn ${cohort === "all" ? "btn-primary" : "btn-secondary"} text-sm`}
-          >
-            All
-          </button>
-          {cohorts.map((c) => (
+        {/* Cohort filtering and CSV export are admin-only; the public board shows
+            every team with no filters. */}
+        {variant === "admin" && (
+          <div className="flex flex-wrap gap-2">
             <button
-              key={c}
-              onClick={() => setCohort(String(c))}
-              className={`btn ${cohort === String(c) ? "btn-primary" : "btn-secondary"} text-sm`}
+              onClick={() => setCohort("all")}
+              className={`btn ${cohort === "all" ? "btn-primary" : "btn-secondary"} text-sm`}
             >
-              Cohort {c}
+              All
             </button>
-          ))}
-          {variant === "admin" && (
+            {cohorts.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCohort(String(c))}
+                className={`btn ${cohort === String(c) ? "btn-primary" : "btn-secondary"} text-sm`}
+              >
+                Cohort {c}
+              </button>
+            ))}
             <a
               href={`/api/export?eventId=${eventId}`}
               className="btn btn-secondary text-sm"
@@ -125,8 +127,8 @@ export function Leaderboard({ eventId, variant = "admin", initialCohort = "all" 
             >
               Export CSV
             </a>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {!isFinalized && (
