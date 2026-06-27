@@ -137,14 +137,17 @@ export function TeamScoreBreakdown({ data, teamId, variant = "admin" }: Props) {
                           <div className="space-y-0.5">
                             {fields.map((f) => {
                               const raw = rawByField.get(f.id);
-                              if (raw == null || f.targetValue == null) {
+                              const circular = s.inputRule === "circular_deviation";
+                              // Compass bearings always have a target (North = 0° by default).
+                              const target = f.targetValue ?? (circular ? 0 : null);
+                              if (raw == null || target == null) {
                                 return (
                                   <div key={f.id} className={dark ? "text-slate-500" : "text-slate-400"}>
                                     —
                                   </div>
                                 );
                               }
-                              const dev = formatDeviation(raw, f.targetValue, f.unit);
+                              const dev = formatDeviation(raw, target, f.unit, circular);
                               return (
                                 <div key={f.id} className={deviationToneClass(dev.tone)}>
                                   {dev.text}

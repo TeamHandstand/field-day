@@ -48,6 +48,15 @@ describe("formatDeviation", () => {
   it("renders time deviations as durations", () => {
     expect(formatDeviation(184, 60, "seconds")).toEqual({ text: "+2m 4s", tone: "over" });
   });
+
+  it("wraps circular (compass) deviations to the shortest signed offset", () => {
+    // 357° against North (0°) is only 3° short, not 357° over.
+    expect(formatDeviation(357, 0, "degrees", true)).toEqual({ text: "-3 degrees", tone: "under" });
+    expect(formatDeviation(5, 0, "degrees", true)).toEqual({ text: "+5 degrees", tone: "over" });
+    expect(formatDeviation(190, 0, "degrees", true)).toEqual({ text: "-170 degrees", tone: "under" });
+    // Wrap relative to a non-zero target: 10° vs 350° is +20°.
+    expect(formatDeviation(10, 350, "degrees", true)).toEqual({ text: "+20 degrees", tone: "over" });
+  });
 });
 
 describe("summarizeRecorded with time", () => {

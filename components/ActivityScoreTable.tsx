@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import type { LeaderboardData } from "@/lib/leaderboard";
 import { rankActivityLive, type ActivityShape, type SubActivityScore } from "@/lib/scoring";
 import { formatMeasureWithUnit, formatDeviation, deviationToneClass } from "@/lib/format";
@@ -30,6 +31,12 @@ export function ActivityScoreTable({ data, activityId, variant = "public", visib
   const dark = variant === "public";
   const isFinalized = data.event.isFinalized && !!data.finalized;
   const finA = data.finalized?.activities.find((a) => a.activityId === activityId);
+
+  // Optional override: sort rows by one sub-activity's rank so the winner of that
+  // individual sub-activity rises to the top. Default sort is the activity rank.
+  const [sortSubId, setSortSubId] = useState<string | null>(null);
+  const activeSort =
+    sortSubId && activity.subActivities.some((s) => s.id === sortSubId) ? sortSubId : null;
 
   const visibleSet = visibleTeamIds ? new Set(visibleTeamIds) : null;
   const visibleTeams = visibleSet ? data.teams.filter((t) => visibleSet.has(t.id)) : data.teams;
@@ -75,6 +82,16 @@ export function ActivityScoreTable({ data, activityId, variant = "public", visib
       excluded: excludedFor(team.id),
     }))
     .sort((a, b) => {
+      // When sorting by a specific sub-activity, rank teams by that sub's rank.
+      if (activeSort) {
+        const ra = data.liveSubActivityRanks[activeSort]?.[a.team.id];
+        const rb = data.liveSubActivityRanks[activeSort]?.[b.team.id];
+        if (ra == null && rb == null) return a.team.teamNumber - b.team.teamNumber;
+        if (ra == null) return 1;
+        if (rb == null) return -1;
+        if (ra !== rb) return ra - rb;
+        return a.team.teamNumber - b.team.teamNumber;
+      }
       if (a.rank == null && b.rank == null) return a.team.teamNumber - b.team.teamNumber;
       if (a.rank == null) return 1;
       if (b.rank == null) return -1;
@@ -102,9 +119,24 @@ export function ActivityScoreTable({ data, activityId, variant = "public", visib
             <th className="px-2 py-2 text-left">Team</th>
             {activity.subActivities.map((s) => {
               const target = subTargetText(s);
+              const sorted = activeSort === s.id;
               return (
                 <th key={s.id} className="px-2 py-2 text-center">
-                  <div>{s.name}</div>
+                  <button
+                    onClick={() => setSortSubId(sorted ? null : s.id)}
+                    className={
+                      sorted
+                        ? "text-brand underline"
+                        : dark
+                          ? "hover:text-slate-200"
+                          : "hover:text-brand"
+                    }
+                    aria-label={`Sort by ${s.name}`}
+                    title={sorted ? "Click to clear sort" : `Sort by ${s.name}`}
+                  >
+                    {s.name}
+                    <span className="ml-1 text-[10px]">{sorted ? "▼" : "↕"}</span>
+                  </button>
                   {target && (
                     <div className={`text-xs font-normal ${dark ? "text-slate-500" : "text-slate-400"}`}>
                       {target}
@@ -151,6 +183,7 @@ export function ActivityScoreTable({ data, activityId, variant = "public", visib
                     (score?.inputs ?? []).map((i) => [i.inputFieldId, i.rawValue]),
                   );
                   const multi = s.inputFields.length > 1;
+                  const circular = s.inputRule === "circular_deviation";
                   return (
                     <td key={s.id} className="px-2 py-2 text-center align-top">
                       {!score ? (
@@ -162,8 +195,10 @@ export function ActivityScoreTable({ data, activityId, variant = "public", visib
                           {s.inputFields.map((f) => {
                             const raw = rawByField.get(f.id);
                             if (raw == null) return <div key={f.id}>—</div>;
+                            // Compass bearings always have a target (North = 0° by default).
+                            const target = f.targetValue ?? (circular ? 0 : null);
                             const dev =
-                              f.targetValue != null ? formatDeviation(raw, f.targetValue, f.unit) : null;
+                              target != null ? formatDeviation(raw, target, f.unit, circular) : null;
                             return (
                               <div key={f.id}>
                                 {multi && (

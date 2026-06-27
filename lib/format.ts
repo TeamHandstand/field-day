@@ -57,12 +57,17 @@ type SummaryField = { id: string; unit: string; targetValue: number | null };
 // Signed gap from a target, tone-coded so over/under/on-target read at a glance.
 // Time deviations render as durations ("+2m 4s"); everything else as the numeric
 // gap with its unit ("+0.42 seconds" → "+0.42s", "-2 grams").
+//
+// For circular measures (compass bearings) the gap wraps around 360°, so the
+// signed shortest offset is used: 357° against a target of 0° is -3°, not +357°.
 export function formatDeviation(
   value: number,
   target: number,
   unit?: string | null,
+  circular = false,
 ): { text: string; tone: DeviationTone } {
-  const diff = value - target;
+  let diff = value - target;
+  if (circular) diff = (((diff % 360) + 540) % 360) - 180;
   const tone: DeviationTone = diff > 0 ? "over" : diff < 0 ? "under" : "on";
   const sign = diff > 0 ? "+" : diff < 0 ? "-" : "";
   const magnitude = isSecondsUnit(unit)
