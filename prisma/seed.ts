@@ -124,8 +124,6 @@ async function seedTemplates() {
             inputFields: {
               create: [
                 { label: "Attempt 1", unit: "seconds", defaultTargetValue: 30, displayOrder: 0 },
-                { label: "Attempt 2", unit: "seconds", defaultTargetValue: 60, displayOrder: 1 },
-                { label: "Attempt 3", unit: "seconds", defaultTargetValue: 90, displayOrder: 2 },
               ],
             },
           },
@@ -137,8 +135,6 @@ async function seedTemplates() {
             inputFields: {
               create: [
                 { label: "Attempt 1", unit: "grams", displayOrder: 0 },
-                { label: "Attempt 2", unit: "grams", displayOrder: 1 },
-                { label: "Attempt 3", unit: "grams", displayOrder: 2 },
               ],
             },
           },
